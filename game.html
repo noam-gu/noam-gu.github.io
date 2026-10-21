@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>איקס עיגול - Noam</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -10,36 +10,69 @@
   <main>
     <section class="game">
       <h1>איקס עיגול</h1>
-      <p class="status" id="status">תור שחקן X</p>
-      <div class="board" id="board"></div>
-      <div class="scoreboard">
-        <div class="score"><span class="score-label x">X</span><span id="scoreX">0</span></div>
-        <div class="score"><span class="score-label">תיקו</span><span id="scoreDraw">0</span></div>
-        <div class="score"><span class="score-label o">O</span><span id="scoreO">0</span></div>
+
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode2p" type="button">2 שחקנים</button>
+        <button class="mode-btn" id="modeBot" type="button">מול הרובוט</button>
       </div>
+
+      <div class="scoreboard">
+        <div class="score">
+          <span class="score-label x">X</span>
+          <span class="score-value" id="scoreX">0</span>
+        </div>
+        <div class="score">
+          <span class="score-label">תיקו</span>
+          <span class="score-value" id="scoreDraw">0</span>
+        </div>
+        <div class="score">
+          <span class="score-label o">O</span>
+          <span class="score-value" id="scoreO">0</span>
+        </div>
+      </div>
+
+      <p class="status" id="status">תור שחקן <span class="status-mark x">X</span></p>
+
+      <div class="board-wrap" id="boardWrap">
+        <div class="board" id="board"></div>
+        <svg class="win-line" id="winLine" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
       <div class="game-controls">
         <button class="btn" id="reset" type="button">משחק חדש</button>
         <a href="index.html" class="btn btn-secondary">חזרה לדף הבית</a>
       </div>
     </section>
   </main>
+
   <footer>
     <p>&copy; <span id="year"></span> Noam</p>
   </footer>
+
+  <canvas id="fireworks"></canvas>
+
   <script>
     document.getElementById('year').textContent = new Date().getFullYear();
 
+    /* ===== אלמנטים ===== */
     const board = document.getElementById('board');
+    const boardWrap = document.getElementById('boardWrap');
+    const winLine = document.getElementById('winLine');
     const statusEl = document.getElementById('status');
     const resetBtn = document.getElementById('reset');
     const scoreXEl = document.getElementById('scoreX');
     const scoreOEl = document.getElementById('scoreO');
     const scoreDrawEl = document.getElementById('scoreDraw');
+    const mode2pBtn = document.getElementById('mode2p');
+    const modeBotBtn = document.getElementById('modeBot');
 
+    /* ===== מצב משחק ===== */
     let cells = Array(9).fill('');
     let currentPlayer = 'X';
     let gameActive = true;
+    let vsBot = false;
     let scores = { X: 0, O: 0, draw: 0 };
+    let botThinking = false;
 
     const winCombos = [
       [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -47,6 +80,7 @@
       [0, 4, 8], [2, 4, 6]
     ];
 
+    /* ===== בניית הלוח ===== */
     function buildBoard() {
       board.innerHTML = '';
       cells.forEach((_, i) => {
@@ -54,66 +88,293 @@
         cell.className = 'cell';
         cell.type = 'button';
         cell.dataset.index = i;
-        cell.setAttribute('aria-label', `תא ${i + 1}`);
+        cell.setAttribute('aria-label', 'תא ' + (i + 1));
         cell.addEventListener('click', () => handleClick(i));
         board.appendChild(cell);
       });
     }
 
+    /* ===== טיפול בלחיצה אנושית ===== */
     function handleClick(i) {
+      // במצב רובוט האדם הוא תמיד X - להתעלם מלחיצות בזמן תור הרובוט
+      if (vsBot && (currentPlayer === 'O' || botThinking)) return;
+      applyMove(i);
+    }
+
+    /* ===== ביצוע מהלך ===== */
+    function applyMove(i) {
       if (!gameActive || cells[i]) return;
       cells[i] = currentPlayer;
       render();
-      if (checkWin(currentPlayer)) {
-        const combo = winCombos.find(c => c.every(idx => cells[idx] === currentPlayer));
+
+      // ניצחון?
+      const combo = winComboFor(currentPlayer);
+      if (combo) {
         combo.forEach(idx => board.children[idx].classList.add('win'));
-        statusEl.textContent = `שחקן ${currentPlayer} ניצח! 🎉`;
-        scores[currentPlayer]++;
+        drawWinLine(combo);
+        const winner = currentPlayer;
+        statusEl.innerHTML = (vsBot && winner === 'O')
+          ? 'הרובוט ניצח! 🤖'
+          : 'שחקן <span class="status-mark ' + winner.toLowerCase() + '">' + winner + '</span> ניצח! 🎉';
+        scores[winner]++;
+        bumpScore(winner);
         updateScores();
         gameActive = false;
+        celebrate();
         return;
       }
+
+      // תיקו?
       if (cells.every(c => c)) {
         statusEl.textContent = 'תיקו! 🤝';
         scores.draw++;
+        bumpScore('draw');
         updateScores();
         gameActive = false;
         return;
       }
+
+      // החלפת תור
       currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
-      statusEl.textContent = `תור שחקן ${currentPlayer}`;
+      updateStatus();
+
+      // תור הרובוט
+      if (vsBot && currentPlayer === 'O' && gameActive) {
+        botThinking = true;
+        board.style.pointerEvents = 'none';
+        setTimeout(() => {
+          const m = chooseBotMove();
+          if (m != null) applyMove(m);
+          board.style.pointerEvents = '';
+          botThinking = false;
+        }, 480);
+      }
     }
 
+    function updateStatus() {
+      if (vsBot && currentPlayer === 'O') {
+        statusEl.textContent = 'הרובוט חושב...';
+        return;
+      }
+      statusEl.innerHTML = 'תור שחקן <span class="status-mark ' + currentPlayer.toLowerCase() + '">' + currentPlayer + '</span>';
+    }
+
+    /* ===== רינדור תאים ===== */
     function render() {
       const cellEls = board.children;
       cells.forEach((v, i) => {
-        cellEls[i].textContent = v;
-        cellEls[i].classList.toggle('x', v === 'X');
-        cellEls[i].classList.toggle('o', v === 'O');
-        cellEls[i].disabled = !!v;
+        const el = cellEls[i];
+        if (el.dataset.val === v) return; // כבר מעודכן - לא להפעיל אנימציה שוב
+        el.dataset.val = v;
+        el.classList.toggle('x', v === 'X');
+        el.classList.toggle('o', v === 'O');
+        el.innerHTML = v ? '<span class="mark">' + v + '</span>' : '';
+        el.disabled = !!v;
       });
     }
 
-    function checkWin(player) {
-      return winCombos.some(combo => combo.every(i => cells[i] === player));
+    /* ===== בדיקות ===== */
+    function winComboFor(player) {
+      return winCombos.find(c => c.every(i => cells[i] === player)) || null;
     }
 
+    function getWinner(b) {
+      for (const c of winCombos) {
+        const [a, b1, b2] = c;
+        if (b[a] && b[a] === b[b1] && b[a] === b[b2]) return b[a];
+      }
+      return null;
+    }
+
+    /* ===== ניקוד ===== */
     function updateScores() {
       scoreXEl.textContent = scores.X;
       scoreOEl.textContent = scores.O;
       scoreDrawEl.textContent = scores.draw;
     }
 
+    function bumpScore(key) {
+      const map = { X: scoreXEl, O: scoreOEl, draw: scoreDrawEl };
+      const el = map[key];
+      if (!el) return;
+      el.classList.remove('bump');
+      void el.offsetWidth; // reflow
+      el.classList.add('bump');
+      setTimeout(() => el.classList.remove('bump'), 300);
+    }
+
+    /* ===== איפוס ===== */
     function reset() {
       cells = Array(9).fill('');
       currentPlayer = 'X';
       gameActive = true;
-      statusEl.textContent = 'תור שחקן X';
+      botThinking = false;
+      board.style.pointerEvents = '';
+      winLine.innerHTML = '';
       buildBoard();
+      render();
+      updateStatus();
     }
 
+    /* ===== קו מנצח ===== */
+    function drawWinLine(combo) {
+      const wrapRect = boardWrap.getBoundingClientRect();
+      winLine.setAttribute('width', wrapRect.width);
+      winLine.setAttribute('height', wrapRect.height);
+      winLine.setAttribute('viewBox', '0 0 ' + wrapRect.width + ' ' + wrapRect.height);
+
+      const first = board.children[combo[0]].getBoundingClientRect();
+      const last = board.children[combo[2]].getBoundingClientRect();
+      const x1 = first.left - wrapRect.left + first.width / 2;
+      const y1 = first.top - wrapRect.top + first.height / 2;
+      const x2 = last.left - wrapRect.left + last.width / 2;
+      const y2 = last.top - wrapRect.top + last.height / 2;
+
+      winLine.innerHTML = '';
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      line.setAttribute('stroke', '#4ade80');
+      line.setAttribute('stroke-width', '8');
+      line.setAttribute('stroke-linecap', 'round');
+      line.style.filter = 'drop-shadow(0 0 6px #4ade80)';
+      winLine.appendChild(line);
+
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      line.style.strokeDasharray = len;
+      line.style.strokeDashoffset = len;
+      void line.getBoundingClientRect();
+      line.style.transition = 'stroke-dashoffset 0.45s ease-out';
+      line.style.strokeDashoffset = 0;
+    }
+
+    /* ===== רובוט (minimax עם קצת אקראיות) ===== */
+    function minimax(b, player) {
+      const w = getWinner(b);
+      if (w === 'O') return { score: 10 };
+      if (w === 'X') return { score: -10 };
+      if (b.every(c => c)) return { score: 0 };
+
+      const moves = [];
+      for (let i = 0; i < 9; i++) {
+        if (!b[i]) {
+          b[i] = player;
+          const r = minimax(b, player === 'X' ? 'O' : 'X');
+          moves.push({ index: i, score: r.score });
+          b[i] = '';
+        }
+      }
+      if (player === 'O') {
+        let best = -Infinity, pick = moves[0];
+        for (const m of moves) if (m.score > best) { best = m.score; pick = m; }
+        return pick;
+      } else {
+        let best = Infinity, pick = moves[0];
+        for (const m of moves) if (m.score < best) { best = m.score; pick = m; }
+        return pick;
+      }
+    }
+
+    function chooseBotMove() {
+      const avail = [];
+      for (let i = 0; i < 9; i++) if (!cells[i]) avail.push(i);
+      if (!avail.length) return null;
+      // 20% מהלך אקראי - מאפשר לנצח את הרובוט
+      if (Math.random() < 0.2) return avail[Math.floor(Math.random() * avail.length)];
+      return minimax(cells.slice(), 'O').index;
+    }
+
+    /* ===== מתג מצב משחק ===== */
+    function setMode(bot) {
+      vsBot = bot;
+      mode2pBtn.classList.toggle('active', !bot);
+      modeBotBtn.classList.toggle('active', bot);
+      reset();
+    }
+    mode2pBtn.addEventListener('click', () => setMode(false));
+    modeBotBtn.addEventListener('click', () => setMode(true));
     resetBtn.addEventListener('click', reset);
+
+    /* ===== זיקוקים ===== */
+    const fwCanvas = document.getElementById('fireworks');
+    const fwCtx = fwCanvas.getContext('2d');
+    let fwParticles = [];
+    let fwAnimId = null;
+
+    function resizeFw() {
+      fwCanvas.width = window.innerWidth;
+      fwCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeFw);
+    resizeFw();
+
+    function launchBurst(x, y) {
+      const palette = ['#ff4d4f', '#4a9eff', '#4ade80', '#fbbf24', '#a78bfa', '#f472b6'];
+      const color = palette[Math.floor(Math.random() * palette.length)];
+      const n = 55;
+      for (let i = 0; i < n; i++) {
+        const angle = (Math.PI * 2 * i) / n + Math.random() * 0.2;
+        const speed = 2 + Math.random() * 4;
+        fwParticles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          decay: 0.012 + Math.random() * 0.012,
+          color,
+          size: 2 + Math.random() * 2
+        });
+      }
+    }
+
+    function animateFw() {
+      // דעיכה שומרת שקיפות (destination-out) - לא מכסה את הדף
+      fwCtx.globalCompositeOperation = 'destination-out';
+      fwCtx.fillStyle = 'rgba(0,0,0,0.16)';
+      fwCtx.fillRect(0, 0, fwCanvas.width, fwCanvas.height);
+      fwCtx.globalCompositeOperation = 'source-over';
+
+      fwParticles = fwParticles.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.06;      // כוח כבידה
+        p.vx *= 0.99;
+        p.life -= p.decay;
+        if (p.life <= 0) return false;
+        fwCtx.globalAlpha = Math.max(p.life, 0);
+        fwCtx.fillStyle = p.color;
+        fwCtx.beginPath();
+        fwCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        fwCtx.fill();
+        return true;
+      });
+      fwCtx.globalAlpha = 1;
+
+      if (fwParticles.length > 0) {
+        fwAnimId = requestAnimationFrame(animateFw);
+      } else {
+        fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+        fwAnimId = null;
+      }
+    }
+
+    function celebrate() {
+      let bursts = 0;
+      const w = fwCanvas.width, h = fwCanvas.height;
+      const fire = () => {
+        launchBurst(w * (0.2 + Math.random() * 0.6), h * (0.2 + Math.random() * 0.3));
+        bursts++;
+        if (bursts < 5) setTimeout(fire, 350);
+      };
+      fire();
+      if (!fwAnimId) animateFw();
+    }
+
+    /* ===== אתחול ===== */
     buildBoard();
+    updateStatus();
   </script>
 </body>
 </html>
