@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>איקס עיגול - Noam</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="game">
+      <h1>איקס עיגול</h1>
+      <p class="status" id="status">תור שחקן X</p>
+      <div class="board" id="board"></div>
+      <div class="scoreboard">
+        <div class="score"><span class="score-label x">X</span><span id="scoreX">0</span></div>
+        <div class="score"><span class="score-label">תיקו</span><span id="scoreDraw">0</span></div>
+        <div class="score"><span class="score-label o">O</span><span id="scoreO">0</span></div>
+      </div>
+      <div class="game-controls">
+        <button class="btn" id="reset" type="button">משחק חדש</button>
+        <a href="index.html" class="btn btn-secondary">חזרה לדף הבית</a>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p>&copy; <span id="year"></span> Noam</p>
+  </footer>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    const board = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const resetBtn = document.getElementById('reset');
+    const scoreXEl = document.getElementById('scoreX');
+    const scoreOEl = document.getElementById('scoreO');
+    const scoreDrawEl = document.getElementById('scoreDraw');
+
+    let cells = Array(9).fill('');
+    let currentPlayer = 'X';
+    let gameActive = true;
+    let scores = { X: 0, O: 0, draw: 0 };
+
+    const winCombos = [
+      [0, 1, 2], [3, 4, 5], [6, 7, 8],
+      [0, 3, 6], [1, 4, 7], [2, 5, 8],
+      [0, 4, 8], [2, 4, 6]
+    ];
+
+    function buildBoard() {
+      board.innerHTML = '';
+      cells.forEach((_, i) => {
+        const cell = document.createElement('button');
+        cell.className = 'cell';
+        cell.type = 'button';
+        cell.dataset.index = i;
+        cell.setAttribute('aria-label', `תא ${i + 1}`);
+        cell.addEventListener('click', () => handleClick(i));
+        board.appendChild(cell);
+      });
+    }
+
+    function handleClick(i) {
+      if (!gameActive || cells[i]) return;
+      cells[i] = currentPlayer;
+      render();
+      if (checkWin(currentPlayer)) {
+        const combo = winCombos.find(c => c.every(idx => cells[idx] === currentPlayer));
+        combo.forEach(idx => board.children[idx].classList.add('win'));
+        statusEl.textContent = `שחקן ${currentPlayer} ניצח! 🎉`;
+        scores[currentPlayer]++;
+        updateScores();
+        gameActive = false;
+        return;
+      }
+      if (cells.every(c => c)) {
+        statusEl.textContent = 'תיקו! 🤝';
+        scores.draw++;
+        updateScores();
+        gameActive = false;
+        return;
+      }
+      currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+      statusEl.textContent = `תור שחקן ${currentPlayer}`;
+    }
+
+    function render() {
+      const cellEls = board.children;
+      cells.forEach((v, i) => {
+        cellEls[i].textContent = v;
+        cellEls[i].classList.toggle('x', v === 'X');
+        cellEls[i].classList.toggle('o', v === 'O');
+        cellEls[i].disabled = !!v;
+      });
+    }
+
+    function checkWin(player) {
+      return winCombos.some(combo => combo.every(i => cells[i] === player));
+    }
+
+    function updateScores() {
+      scoreXEl.textContent = scores.X;
+      scoreOEl.textContent = scores.O;
+      scoreDrawEl.textContent = scores.draw;
+    }
+
+    function reset() {
+      cells = Array(9).fill('');
+      currentPlayer = 'X';
+      gameActive = true;
+      statusEl.textContent = 'תור שחקן X';
+      buildBoard();
+    }
+
+    resetBtn.addEventListener('click', reset);
+    buildBoard();
+  </script>
+</body>
+</html>
