@@ -267,3 +267,47 @@ footer {
   main { padding: 2.5rem 2rem; }
   .game-controls { flex-direction: row; justify-content: center; }
 }
+
+/* ============ מטבעות ============ */
+.coin-badge {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  background: linear-gradient(135deg, #3a2a0a, #5a3f10);
+  border: 1.5px solid #fbbf24;
+  border-radius: 999px;
+  font-weight: 700;
+  color: #fde68a;
+  font-size: 1.05rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  user-select: none;
+}
+
+.coin-icon { font-size: 1.2rem; line-height: 1; }
+
+.coin-badge.pop { animation: coinPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes coinPop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.fly-coin {
+  position: fixed;
+  top: 0;
+  left: 0;
+  font-size: 26px;
+  line-height: 1;
+  z-index: 1001;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
+@media (min-width: 600px) {
+  .coin-badge { top: 1.5rem; left: 1.5rem; font-size: 1.15rem; }
+}

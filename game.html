@@ -50,7 +50,7 @@
   </footer>
 
   <canvas id="fireworks"></canvas>
-
+  <script src="coins.js"></script>
   <script>
     document.getElementById('year').textContent = new Date().getFullYear();
 
@@ -119,6 +119,8 @@
         scores[winner]++;
         bumpScore(winner);
         updateScores();
+        // ניצחון של שחקן אנושי מזכה ב-10 מטבעות (לא כשהרובוט מנצח)
+        if (!(vsBot && winner === 'O') && window.NoamCoins) window.NoamCoins.add(10);
         gameActive = false;
         celebrate();
         return;
