@@ -119,8 +119,11 @@
         scores[winner]++;
         bumpScore(winner);
         updateScores();
-        // ניצחון של שחקן אנושי מזכה ב-10 מטבעות (לא כשהרובוט מנצח)
-        if (!(vsBot && winner === 'O') && window.NoamCoins) window.NoamCoins.add(10);
+        // ניצחון מזכה במטבעות: 15 על ניצחון הרובוט, 10 במשחק רגיל (הרובוט שמנצח - כלום)
+        if (window.NoamCoins) {
+          if (vsBot && winner === 'X') window.NoamCoins.add(15);
+          else if (!vsBot) window.NoamCoins.add(10);
+        }
         gameActive = false;
         celebrate();
         return;
