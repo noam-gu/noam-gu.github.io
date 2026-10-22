@@ -21,9 +21,30 @@
   function render() { countEl.textContent = coins; }
 
   function bump() {
+    badge.classList.remove('shake');
     badge.classList.remove('pop');
     void badge.offsetWidth; // reflow לאיפוס האנימציה
     badge.classList.add('pop');
+  }
+
+  /* שכבת ההבזק האדום (מסך מלא) */
+  const flash = document.createElement('div');
+  flash.className = 'lose-flash';
+  document.body.appendChild(flash);
+
+  function flashRed() {
+    flash.classList.remove('show');
+    void flash.offsetWidth;
+    flash.classList.add('show');
+  }
+
+  function shakeBadge() {
+    badge.classList.remove('pop');
+    badge.classList.remove('shake');
+    void badge.offsetWidth;
+    badge.classList.add('shake');
+    badge.classList.add('lose');
+    setTimeout(function () { badge.classList.remove('lose'); }, 600);
   }
 
   render();
@@ -64,6 +85,41 @@
     }
   }
 
+  /* הפסד n מטבעות - מטבעות נופלים + הבזק אדום + רעידה (לא יורד מתחת ל-0) */
+  function loseCoins(n) {
+    flashRed();
+    shakeBadge();
+    const actual = Math.min(n, coins);
+    if (actual <= 0) return;
+    const br = badge.getBoundingClientRect();
+    const ox = br.left + br.width / 2 - 13;
+    const oy = br.top + br.height / 2 - 13;
+
+    for (let i = 0; i < actual; i++) {
+      const coin = document.createElement('div');
+      coin.className = 'fly-coin lose-coin';
+      coin.textContent = '🪙';
+      document.body.appendChild(coin);
+
+      const tx = (Math.random() - 0.5) * 90;        // פיזור לצדדים
+      const ty = 70 + Math.random() * 50;           // נופל למטה
+      const delay = i * 70;
+
+      const anim = coin.animate([
+        { transform: 'translate(' + ox + 'px,' + oy + 'px) scale(1)', opacity: 1 },
+        { transform: 'translate(' + (ox + tx * 0.5) + 'px,' + (oy + ty * 0.5) + 'px) scale(0.95)', opacity: 1, offset: 0.4 },
+        { transform: 'translate(' + (ox + tx) + 'px,' + (oy + ty) + 'px) scale(0.3)', opacity: 0 }
+      ], { duration: 650, delay: delay, easing: 'cubic-bezier(0.4,0.1,0.6,1)' });
+
+      anim.onfinish = function () {
+        coin.remove();
+        coins = Math.max(0, coins - 1);
+        render();
+        saveCoins(coins);
+      };
+    }
+  }
+
   /* חשיפה גלובלית */
-  window.NoamCoins = { add: award, get: function () { return coins; } };
+  window.NoamCoins = { add: award, lose: loseCoins, get: function () { return coins; } };
 })();

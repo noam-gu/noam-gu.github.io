@@ -113,19 +113,21 @@
         combo.forEach(idx => board.children[idx].classList.add('win'));
         drawWinLine(combo);
         const winner = currentPlayer;
-        statusEl.innerHTML = (vsBot && winner === 'O')
+        const robotWon = vsBot && winner === 'O';
+        statusEl.innerHTML = robotWon
           ? 'הרובוט ניצח! 🤖'
           : 'שחקן <span class="status-mark ' + winner.toLowerCase() + '">' + winner + '</span> ניצח! 🎉';
         scores[winner]++;
         bumpScore(winner);
         updateScores();
-        // ניצחון מזכה במטבעות: 15 על ניצחון הרובוט, 10 במשחק רגיל (הרובוט שמנצח - כלום)
+        // מטבעות: 15 על ניצחון הרובוט, 10 במשחק רגיל, -3 והבזק אדום בהפסד לרובוט
         if (window.NoamCoins) {
-          if (vsBot && winner === 'X') window.NoamCoins.add(15);
+          if (robotWon) window.NoamCoins.lose(3);
+          else if (vsBot && winner === 'X') window.NoamCoins.add(15);
           else if (!vsBot) window.NoamCoins.add(10);
         }
         gameActive = false;
-        celebrate();
+        if (!robotWon) celebrate(); // זיקוקים רק בניצחון, לא בהפסד לרובוט
         return;
       }
 

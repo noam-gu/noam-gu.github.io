@@ -311,3 +311,42 @@ footer {
 @media (min-width: 600px) {
   .coin-badge { top: 1.5rem; left: 1.5rem; font-size: 1.15rem; }
 }
+
+/* ============ הפסד / הבזק אדום ============ */
+.coin-badge {
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.lose-flash {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,40,40,0.5), rgba(200,0,0,0.3));
+  pointer-events: none;
+  opacity: 0;
+  z-index: 998;
+}
+.lose-flash.show { animation: redFlash 0.6s ease-out; }
+@keyframes redFlash {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.coin-badge.shake { animation: coinShake 0.5s ease-in-out; }
+@keyframes coinShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.coin-badge.lose {
+  border-color: #ff4d4f;
+  color: #fca5a5;
+  box-shadow: 0 0 14px rgba(255, 77, 79, 0.6);
+}
+
+.fly-coin.lose-coin {
+  filter: drop-shadow(0 0 5px rgba(255, 60, 60, 0.7));
+}
