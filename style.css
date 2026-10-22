@@ -350,3 +350,55 @@ footer {
 .fly-coin.lose-coin {
   filter: drop-shadow(0 0 5px rgba(255, 60, 60, 0.7));
 }
+
+/* ============ דג באקווריום ============ */
+.aquarium-game { animation: fadeIn 0.5s ease; width: 100%; }
+.aquarium-game h1 { font-size: clamp(1.6rem, 7vw, 2.8rem); margin-bottom: 0.75rem; }
+
+.aq-stats {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-size: clamp(1rem, 4vw, 1.2rem);
+}
+.aq-stats b { color: var(--accent); }
+
+.canvas-wrap {
+  position: relative;
+  width: min(94vw, 600px);
+  aspect-ratio: 4 / 3;
+  margin: 0 auto 1.25rem;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid #2a2e3c;
+  background: #063048;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+#aquarium {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.game-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 20, 35, 0.72);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  padding: 1.25rem;
+  text-align: center;
+}
+.game-overlay.hidden { display: none; }
+
+.overlay-card { max-width: 320px; }
+.overlay-card h2 { font-size: clamp(1.4rem, 6vw, 1.8rem); margin-bottom: 0.5rem; }
+.overlay-card p { color: #c0c0c0; margin-bottom: 1.25rem; line-height: 1.55; font-size: 1rem; }
+.overlay-card b { color: var(--accent); }
