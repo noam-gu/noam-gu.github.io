@@ -16,10 +16,11 @@
 
       <div class="canvas-wrap">
         <canvas id="aquarium"></canvas>
+        <div class="fish-hint hidden" id="fishHint">לחץ על הדג כדי להפוך לדג 🐟</div>
         <div class="game-overlay" id="overlay">
           <div class="overlay-card">
             <h2 id="overlayTitle">שחק! 🐟</h2>
-            <p id="overlayMsg">הזז/י את העכבר או האצבע כדי לשחות. אכל אוכל 🍤, אסוף מטבעות 🪙, והיזהר מהמדוזות 🪼!</p>
+            <p id="overlayMsg">הזז/י את העכבר או האצבע כדי לשחות. אכל אוכל 🍤, אסוף מטבעות 🪙, והיזהר מהמדוזות 🪼!<br>לחץ על הדג כדי להפוך להיות הדג.</p>
             <button class="btn" id="startBtn" type="button">התחל</button>
           </div>
         </div>
@@ -49,11 +50,13 @@
       const startBtn = document.getElementById('startBtn');
       const restartBtn = document.getElementById('restart');
       const scoreEl = document.getElementById('score');
+      const fishHint = document.getElementById('fishHint');
 
       let W = 600, H = 450, DPR = 1;
       let player, foods, coins, hazards, bubbles, seaweeds, particles;
       let score = 0, running = false, lastTime = 0, t = 0;
       let foodTimer = 0, coinTimer = 0, hazTimer = 0;
+      let camMode = 'full'; // 'full' או 'fish' (להפוך לדג)
       const pointer = { x: 300, y: 225 };
 
       function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -81,14 +84,34 @@
         seaweeds = [];
         for (let i = 0; i < 5; i++) seaweeds.push({ x: (i + 0.5) / 5 * W, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
         score = 0; updateScoreUI();
+        camMode = 'full';
         foodTimer = 500; coinTimer = 5000; hazTimer = 4000;
         pointer.x = W / 2; pointer.y = H / 2;
       }
 
       function updateScoreUI() { scoreEl.textContent = score; }
 
+      function updateHint() {
+        if (!running) { fishHint.classList.add('hidden'); return; }
+        fishHint.classList.remove('hidden');
+        fishHint.textContent = (camMode === 'fish')
+          ? 'אתה הדג! לחץ על הדג כדי לצאת 🐟'
+          : 'לחץ על הדג כדי להפוך לדג 🐟';
+      }
+
+      function toggleCam() {
+        if (camMode === 'full') {
+          camMode = 'fish';
+          pointer.x = W / 2; pointer.y = H / 2; // מונע זינוק
+        } else {
+          camMode = 'full';
+          pointer.x = player.x; pointer.y = player.y;
+        }
+        updateHint();
+      }
+
       /* יצירת אובייקטים */
-      function spawnFood() { foods.push({ x: 20 + Math.random() * (W - 40), y: -10, vy: 0.4 + Math.random() * 0.5 }); }
+      function spawnFood() { foods.push({ x: 20 + Math.random() * (W - 40), y: -10, vy: 0.4 + Math.random() * 0.5, r: 6 }); }
       function spawnCoin() { coins.push({ x: 30 + Math.random() * (W - 60), y: 30 + Math.random() * (H - 60), bob: Math.random() * Math.PI * 2, life: 8000, collected: false }); }
       function spawnHazard() {
         const fromLeft = Math.random() < 0.5;
@@ -104,17 +127,25 @@
       }
 
       function update(dt) {
-        // תנועת הדג אל העכבר/אצבע
-        const dx = pointer.x - player.x, dy = pointer.y - player.y;
+        // יעד תנועה לפי מצב מצלמה
+        let tx, ty;
+        if (camMode === 'fish') {
+          let sx = pointer.x - W / 2, sy = pointer.y - H / 2;
+          const mag = Math.hypot(sx, sy), max = 80;
+          if (mag > max) { sx = sx / mag * max; sy = sy / mag * max; }
+          tx = player.x + sx; ty = player.y + sy;
+        } else {
+          tx = pointer.x; ty = pointer.y;
+        }
+        const dx = tx - player.x, dy = ty - player.y;
         const k = 0.14;
-        player.vx = dx * k; player.vy = dy * k;
-        player.x += player.vx * (dt / 16);
-        player.y += player.vy * (dt / 16);
+        player.x += dx * k * (dt / 16);
+        player.y += dy * k * (dt / 16);
         if (Math.abs(dx) > 2) player.dir = dx > 0 ? 1 : -1;
         player.x = clamp(player.x, player.size, W - player.size);
         player.y = clamp(player.y, player.size, H - player.size);
 
-        // טיימרים של יצירה
+        // טיימרים
         foodTimer -= dt;
         if (foodTimer <= 0) { spawnFood(); foodTimer = 650 + Math.random() * 900; }
         coinTimer -= dt;
@@ -122,26 +153,23 @@
         hazTimer -= dt;
         if (hazTimer <= 0 && hazards.length < 2) { spawnHazard(); hazTimer = 6000 + Math.random() * 5000; }
 
-        // אוכל שוקע
         for (const f of foods) f.y += f.vy * (dt / 16);
         foods = foods.filter(f => f.y < H + 20 && !f.eaten);
 
-        // מטבעות צפים + חיי קצב
         for (const c of coins) { c.bob += 0.06; c.life -= dt; }
         coins = coins.filter(c => c.life > 0 && !c.collected);
 
-        // מדוזות נעות
         for (const h of hazards) { h.x += h.vx * (dt / 16); h.y += h.vy * (dt / 16); h.phase += 0.03; }
         hazards = hazards.filter(h => h.x > -60 && h.x < W + 60 && h.y > -60 && h.y < H + 60);
 
-        // אכילת אוכל
+        // אכילה
         for (const f of foods) {
-          if (!f.eaten && Math.hypot(f.x - player.x, f.y - player.y) < player.size + 7) {
+          if (!f.eaten && Math.hypot(f.x - player.x, f.y - player.y) < player.size + f.r) {
             f.eaten = true; score++; player.size = Math.min(34, player.size + 0.35);
             addBurst(f.x, f.y, '#ffcc66'); updateScoreUI();
           }
         }
-        // איסוף מטבעות
+        // מטבעות
         for (const c of coins) {
           if (!c.collected && Math.hypot(c.x - player.x, c.y - player.y) < player.size + 10) {
             c.collected = true;
@@ -149,7 +177,7 @@
             addBurst(c.x, c.y, '#fbbf24');
           }
         }
-        // פגיעה במדוזה - סוף משחק
+        // מדוזות
         for (const h of hazards) {
           if (Math.hypot(h.x - player.x, h.y - player.y) < player.size + h.r * 0.6) {
             endGame(); break;
@@ -167,11 +195,10 @@
       }
 
       /* ===== ציור ===== */
-      function drawBackground() {
+      function drawWater() {
         const g = ctx.createLinearGradient(0, 0, 0, H);
         g.addColorStop(0, '#0a3a5e'); g.addColorStop(1, '#063048');
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-        // קרני אור
         ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = '#aee0ff';
         for (let i = 0; i < 3; i++) {
           const x = (i + 0.5) / 3 * W + Math.sin(t * 0.0005 + i) * 20;
@@ -179,9 +206,9 @@
           ctx.moveTo(x - 20, 0); ctx.lineTo(x + 20, 0); ctx.lineTo(x + 60, H); ctx.lineTo(x - 60, H); ctx.closePath(); ctx.fill();
         }
         ctx.restore();
-        // חול
-        ctx.fillStyle = '#c9a063'; ctx.fillRect(0, H - 14, W, 14);
       }
+
+      function drawSand() { ctx.fillStyle = '#c9a063'; ctx.fillRect(0, H - 14, W, 14); }
 
       function drawSeaweed(s) {
         ctx.strokeStyle = '#1f7a3a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
@@ -199,23 +226,31 @@
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
       }
 
+      // אוכל תלת-מימדי
       function drawFood(f) {
-        ctx.fillStyle = '#ffcc66';
-        ctx.beginPath(); ctx.arc(f.x, f.y, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#e0a83a'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(f.x, f.y, 5, 0, Math.PI * 2); ctx.stroke();
+        const r = f.r;
+        const g = ctx.createRadialGradient(f.x - r * 0.35, f.y - r * 0.35, r * 0.15, f.x, f.y, r);
+        g.addColorStop(0, '#fff2bf'); g.addColorStop(0.45, '#ffcc66'); g.addColorStop(1, '#b97a23');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.beginPath(); ctx.arc(f.x - r * 0.3, f.y - r * 0.3, r * 0.22, 0, Math.PI * 2); ctx.fill();
       }
 
+      // מטבע תלת-מימדי
       function drawCoin(c) {
         const yy = c.y + Math.sin(c.bob) * 3;
         const fade = c.life < 1500 ? c.life / 1500 : 1;
         ctx.globalAlpha = fade;
-        ctx.fillStyle = '#fbbf24';
-        ctx.beginPath(); ctx.arc(c.x, yy, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fde68a';
-        ctx.beginPath(); ctx.arc(c.x, yy, 5.5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(c.x, yy, 9, 0, Math.PI * 2); ctx.stroke();
+        const r = 9;
+        const g = ctx.createRadialGradient(c.x - r * 0.3, yy - r * 0.3, r * 0.15, c.x, yy, r);
+        g.addColorStop(0, '#fff3b0'); g.addColorStop(0.5, '#fbbf24'); g.addColorStop(1, '#b8860b');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(c.x, yy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#8a5a00'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(c.x, yy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,240,180,0.85)';
+        ctx.beginPath(); ctx.arc(c.x - r * 0.3, yy - r * 0.3, r * 0.26, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
       }
 
@@ -245,6 +280,9 @@
         ctx.scale(p.dir, 1);
         const s = p.size;
         const wig = Math.sin(t * 0.02) * s * 0.18;
+        // גוף תלת-מימדי
+        const g = ctx.createRadialGradient(s * 0.3, -s * 0.2, s * 0.1, 0, 0, s);
+        g.addColorStop(0, '#ffb070'); g.addColorStop(0.6, '#ff8c42'); g.addColorStop(1, '#d96820');
         ctx.fillStyle = '#ff6b1a';
         ctx.beginPath();
         ctx.moveTo(-s * 0.8, 0);
@@ -252,7 +290,7 @@
         ctx.lineTo(-s * 1.5, 0);
         ctx.lineTo(-s * 1.6, s * 0.5 + wig);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#ff8c42';
+        ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#ffd29c';
         ctx.beginPath(); ctx.ellipse(0, s * 0.2, s * 0.7, s * 0.35, 0, 0, Math.PI * 2); ctx.fill();
@@ -273,7 +311,10 @@
       }
 
       function render() {
-        drawBackground();
+        drawWater(); // רקע מים במרחב מסך
+        ctx.save();
+        if (camMode === 'fish') ctx.translate(W / 2 - player.x, H / 2 - player.y); // מצלמה עוקבת
+        drawSand();
         for (const s of seaweeds) drawSeaweed(s);
         for (const b of bubbles) drawBubble(b);
         for (const f of foods) drawFood(f);
@@ -281,6 +322,7 @@
         for (const h of hazards) drawHazard(h);
         drawFish(player);
         for (const p of particles) drawParticle(p);
+        ctx.restore();
       }
 
       function loop(now) {
@@ -297,12 +339,14 @@
         overlayMsg.innerHTML = 'הניקוד שלך: <b>' + score + '</b> אוכלים 🍤<br>נסה שוב לשבור את השיא!';
         startBtn.textContent = 'שחק שוב';
         overlay.classList.remove('hidden');
+        updateHint();
       }
 
       function startGame() {
         setup();
         overlay.classList.add('hidden');
         running = true; lastTime = performance.now(); t = 0;
+        updateHint();
         requestAnimationFrame(loop);
       }
 
@@ -312,15 +356,26 @@
         pointer.x = clientX - rect.left;
         pointer.y = clientY - rect.top;
       }
+
+      function onPress(clientX, clientY) {
+        if (!running) return;
+        if (camMode === 'full') { toggleCam(); return; } // כל לחיצה הופכת לדג (הדג תחת הסמן)
+        const rect = canvas.getBoundingClientRect();
+        const sx = clientX - rect.left, sy = clientY - rect.top;
+        if (Math.hypot(sx - W / 2, sy - H / 2) < player.size + 16) { toggleCam(); return; } // לחיצה על הדג (מרכז) = יציאה
+        setPointer(clientX, clientY);
+      }
+
       canvas.addEventListener('mousemove', e => setPointer(e.clientX, e.clientY));
-      canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; setPointer(t.clientX, t.clientY); }, { passive: false });
-      canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; setPointer(t.clientX, t.clientY); }, { passive: false });
+      canvas.addEventListener('mousedown', e => onPress(e.clientX, e.clientY));
+      canvas.addEventListener('touchstart', e => { e.preventDefault(); const tch = e.touches[0]; onPress(tch.clientX, tch.clientY); }, { passive: false });
+      canvas.addEventListener('touchmove', e => { e.preventDefault(); const tch = e.touches[0]; setPointer(tch.clientX, tch.clientY); }, { passive: false });
 
       startBtn.addEventListener('click', startGame);
       restartBtn.addEventListener('click', startGame);
       window.addEventListener('resize', () => { if (running) resize(); });
 
-      /* אתחול - ציור אקווריום ראשוני מאחורי ה-overlay */
+      /* אתחול */
       setup();
       render();
     })();

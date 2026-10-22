@@ -402,3 +402,21 @@ footer {
 .overlay-card h2 { font-size: clamp(1.4rem, 6vw, 1.8rem); margin-bottom: 0.5rem; }
 .overlay-card p { color: #c0c0c0; margin-bottom: 1.25rem; line-height: 1.55; font-size: 1rem; }
 .overlay-card b { color: var(--accent); }
+
+/* רמז "לחץ על הדג" */
+.fish-hint {
+  position: absolute;
+  top: 0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.45);
+  color: #cfe9ff;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+  animation: fadeIn 0.3s ease;
+}
+.fish-hint.hidden { display: none; }
