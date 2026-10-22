@@ -20,7 +20,7 @@
         <div class="game-overlay" id="overlay">
           <div class="overlay-card">
             <h2 id="overlayTitle">שחק! 🐟</h2>
-            <p id="overlayMsg">הזז/י את העכבר או האצבע כדי לשחות. אכל אוכל 🍤, אסוף מטבעות 🪙, והיזהר מהמדוזות 🪼!<br>לחץ על הדג כדי להפוך להיות הדג.</p>
+            <p id="overlayMsg">הזז/י את העכבר או האצבע כדי לשחות. אכל אוכל 🍤, אסוף מטבעות 🪙, והיזהר מהמדוזות 🪼!<br>לחץ על הדג כדי לראות מעיניו.</p>
             <button class="btn" id="startBtn" type="button">התחל</button>
           </div>
         </div>
@@ -53,13 +53,14 @@
       const fishHint = document.getElementById('fishHint');
 
       let W = 600, H = 450, DPR = 1;
-      let player, foods, coins, hazards, bubbles, seaweeds, particles;
+      let player, foods, coins, hazards, bubbles, seaweeds, particles, snow;
       let score = 0, running = false, lastTime = 0, t = 0;
       let foodTimer = 0, coinTimer = 0, hazTimer = 0;
-      let camMode = 'full'; // 'full' או 'fish' (להפוך לדג)
+      let camMode = 'full'; // 'full' או 'fish' (תצפית מעיני הדג)
       const pointer = { x: 300, y: 225 };
 
       function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+      function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
 
       function resize() {
         DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -77,12 +78,14 @@
 
       function setup() {
         resize();
-        player = { x: W / 2, y: H / 2, size: 18, dir: 1, vx: 0, vy: 0 };
+        player = { x: W / 2, y: H / 2, size: 18, dir: 1, vx: 0, vy: 0, heading: 0 };
         foods = []; coins = []; hazards = []; particles = [];
         bubbles = [];
         for (let i = 0; i < 14; i++) bubbles.push(makeBubble(true));
         seaweeds = [];
         for (let i = 0; i < 5; i++) seaweeds.push({ x: (i + 0.5) / 5 * W, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
+        snow = [];
+        for (let i = 0; i < 26; i++) snow.push({ x: Math.random() * W, y: Math.random() * H, r: 0.6 + Math.random() * 1.4, vx: -0.15 + Math.random() * 0.06, vy: 0.08 + Math.random() * 0.22 });
         score = 0; updateScoreUI();
         camMode = 'full';
         foodTimer = 500; coinTimer = 5000; hazTimer = 4000;
@@ -95,14 +98,15 @@
         if (!running) { fishHint.classList.add('hidden'); return; }
         fishHint.classList.remove('hidden');
         fishHint.textContent = (camMode === 'fish')
-          ? 'אתה הדג! לחץ על הדג כדי לצאת 🐟'
-          : 'לחץ על הדג כדי להפוך לדג 🐟';
+          ? 'אתה הדג! לחץ במרכז כדי לצאת 🐟'
+          : 'לחץ על הדג כדי לראות מעיניו 🐟';
       }
 
       function toggleCam() {
         if (camMode === 'full') {
           camMode = 'fish';
-          pointer.x = W / 2; pointer.y = H / 2; // מונע זינוק
+          player.heading = player.dir > 0 ? 0 : Math.PI;
+          pointer.x = W / 2; pointer.y = H / 2;
         } else {
           camMode = 'full';
           pointer.x = player.x; pointer.y = player.y;
@@ -126,6 +130,21 @@
         }
       }
 
+      // ערפל צלילות - ראות מוגבלת מתחת למים
+      function fogOf(x, y) {
+        if (camMode !== 'fish') return 1;
+        const d = Math.hypot(x - player.x, y - player.y);
+        return clamp(1 - d / 250, 0.22, 1);
+      }
+
+      function updateSnow(dt) {
+        for (const s of snow) {
+          s.x += s.vx * (dt / 16); s.y += s.vy * (dt / 16);
+          if (s.y > H + 2) { s.y = -2; s.x = Math.random() * W; }
+          if (s.x < -2) s.x = W + 2; if (s.x > W + 2) s.x = -2;
+        }
+      }
+
       function update(dt) {
         // יעד תנועה לפי מצב מצלמה
         let tx, ty;
@@ -142,6 +161,8 @@
         player.x += dx * k * (dt / 16);
         player.y += dy * k * (dt / 16);
         if (Math.abs(dx) > 2) player.dir = dx > 0 ? 1 : -1;
+        // כיוון מבט חלק (לסיבוב התצפית)
+        if (Math.hypot(dx, dy) > 3) player.heading = lerpAngle(player.heading, Math.atan2(dy, dx), 0.18);
         player.x = clamp(player.x, player.size, W - player.size);
         player.y = clamp(player.y, player.size, H - player.size);
 
@@ -192,13 +213,25 @@
         // חלקיקים
         for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= dt; }
         particles = particles.filter(p => p.life > 0);
+
+        updateSnow(dt);
       }
 
-      /* ===== ציור ===== */
+      /* ===== ציור רקע ריאליסטי ===== */
       function drawWater() {
         const g = ctx.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, '#0a3a5e'); g.addColorStop(1, '#063048');
+        g.addColorStop(0, '#0e4a72'); g.addColorStop(0.5, '#0a3a5e'); g.addColorStop(1, '#063048');
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        // ברק פני שטח
+        ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const y = 8 + i * 6;
+          ctx.beginPath(); ctx.moveTo(0, y);
+          for (let x = 0; x <= W; x += 20) ctx.lineTo(x, y + Math.sin(x * 0.05 + t * 0.001 + i) * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // קרני אור
         ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = '#aee0ff';
         for (let i = 0; i < 3; i++) {
           const x = (i + 0.5) / 3 * W + Math.sin(t * 0.0005 + i) * 20;
@@ -238,10 +271,10 @@
       }
 
       // מטבע תלת-מימדי
-      function drawCoin(c) {
+      function drawCoin(c, fog) {
         const yy = c.y + Math.sin(c.bob) * 3;
         const fade = c.life < 1500 ? c.life / 1500 : 1;
-        ctx.globalAlpha = fade;
+        ctx.globalAlpha = fade * fog;
         const r = 9;
         const g = ctx.createRadialGradient(c.x - r * 0.3, yy - r * 0.3, r * 0.15, c.x, yy, r);
         g.addColorStop(0, '#fff3b0'); g.addColorStop(0.5, '#fbbf24'); g.addColorStop(1, '#b8860b');
@@ -280,9 +313,6 @@
         ctx.scale(p.dir, 1);
         const s = p.size;
         const wig = Math.sin(t * 0.02) * s * 0.18;
-        // גוף תלת-מימדי
-        const g = ctx.createRadialGradient(s * 0.3, -s * 0.2, s * 0.1, 0, 0, s);
-        g.addColorStop(0, '#ffb070'); g.addColorStop(0.6, '#ff8c42'); g.addColorStop(1, '#d96820');
         ctx.fillStyle = '#ff6b1a';
         ctx.beginPath();
         ctx.moveTo(-s * 0.8, 0);
@@ -290,6 +320,8 @@
         ctx.lineTo(-s * 1.5, 0);
         ctx.lineTo(-s * 1.6, s * 0.5 + wig);
         ctx.closePath(); ctx.fill();
+        const g = ctx.createRadialGradient(s * 0.3, -s * 0.2, s * 0.1, 0, 0, s);
+        g.addColorStop(0, '#ffb070'); g.addColorStop(0.6, '#ff8c42'); g.addColorStop(1, '#d96820');
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#ffd29c';
@@ -310,19 +342,42 @@
         ctx.globalAlpha = 1;
       }
 
+      // שכבות אווירה במסך (תצפית מעיני הדג)
+      function drawSnow() {
+        ctx.fillStyle = 'rgba(190,225,235,0.4)';
+        for (const s of snow) { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); }
+      }
+      function drawVignette() {
+        const g = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.25, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,18,32,0.6)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
+      function drawSnout() {
+        const g = ctx.createRadialGradient(W / 2, H, 20, W / 2, H, H * 0.7);
+        g.addColorStop(0, 'rgba(217,104,32,0.45)'); g.addColorStop(0.35, 'rgba(217,104,32,0.15)'); g.addColorStop(1, 'rgba(217,104,32,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
+
       function render() {
-        drawWater(); // רקע מים במרחב מסך
+        drawWater();
         ctx.save();
-        if (camMode === 'fish') ctx.translate(W / 2 - player.x, H / 2 - player.y); // מצלמה עוקבת
+        if (camMode === 'fish') {
+          // תצפית מעיני הדג: סיבוב כך שכיוון התנועה = למעלה
+          const phi = -Math.PI / 2 - player.heading;
+          ctx.translate(W / 2, H / 2);
+          ctx.rotate(phi);
+          ctx.translate(-player.x, -player.y);
+        }
         drawSand();
-        for (const s of seaweeds) drawSeaweed(s);
-        for (const b of bubbles) drawBubble(b);
-        for (const f of foods) drawFood(f);
-        for (const c of coins) drawCoin(c);
-        for (const h of hazards) drawHazard(h);
-        drawFish(player);
+        for (const s of seaweeds) { ctx.globalAlpha = fogOf(s.x, H - 14); drawSeaweed(s); } ctx.globalAlpha = 1;
+        for (const b of bubbles) { ctx.globalAlpha = fogOf(b.x, b.y); drawBubble(b); } ctx.globalAlpha = 1;
+        for (const f of foods) { ctx.globalAlpha = fogOf(f.x, f.y); drawFood(f); } ctx.globalAlpha = 1;
+        for (const c of coins) drawCoin(c, fogOf(c.x, c.y));
+        for (const h of hazards) { ctx.globalAlpha = fogOf(h.x, h.y); drawHazard(h); } ctx.globalAlpha = 1;
+        if (camMode !== 'fish') drawFish(player); // בתצפית מעיני הדג הדג עצמו נעלם
         for (const p of particles) drawParticle(p);
         ctx.restore();
+        if (camMode === 'fish') { drawSnow(); drawVignette(); drawSnout(); }
       }
 
       function loop(now) {
@@ -356,13 +411,12 @@
         pointer.x = clientX - rect.left;
         pointer.y = clientY - rect.top;
       }
-
       function onPress(clientX, clientY) {
         if (!running) return;
-        if (camMode === 'full') { toggleCam(); return; } // כל לחיצה הופכת לדג (הדג תחת הסמן)
+        if (camMode === 'full') { toggleCam(); return; } // כל לחיצה הופכת לדג
         const rect = canvas.getBoundingClientRect();
         const sx = clientX - rect.left, sy = clientY - rect.top;
-        if (Math.hypot(sx - W / 2, sy - H / 2) < player.size + 16) { toggleCam(); return; } // לחיצה על הדג (מרכז) = יציאה
+        if (Math.hypot(sx - W / 2, sy - H / 2) < 52) { toggleCam(); return; } // לחיצה במרכז = יציאה
         setPointer(clientX, clientY);
       }
 
