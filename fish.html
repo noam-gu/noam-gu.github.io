@@ -52,12 +52,14 @@
       const scoreEl = document.getElementById('score');
       const fishHint = document.getElementById('fishHint');
 
-      let W = 600, H = 450, DPR = 1;
-      let player, foods, coins, hazards, bubbles, seaweeds, particles, snow, pebbles;
+      let W = 600, H = 600, DPR = 1;
+      let player, foods, coins, hazards, bubbles, seaweeds, particles, snow, pebbles, grains;
       let score = 0, running = false, lastTime = 0, t = 0;
       let foodTimer = 0, coinTimer = 0, hazTimer = 0;
       let camMode = 'full'; // 'full' או 'fish' (תצפית מעיני הדג)
-      const pointer = { x: 300, y: 225 };
+      let person = '1st'; // בתוך fish POV: '1st' או '3rd' (מקש E)
+      const POP_MS = 1800; // אורך פיצוץ בועה (סלואו-מושן)
+      const pointer = { x: 300, y: 300 };
 
       function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
       function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
@@ -72,24 +74,35 @@
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       }
 
-      function makeBubble(any) {
-        return { x: Math.random() * W, y: any ? Math.random() * H : H + 10, r: 2 + Math.random() * 5, s: 0.3 + Math.random() * 0.6 };
+      function makeBubble() {
+        const minR = 10, maxR = 19; // רדיוס 0.5cm~1cm
+        let x, y, r, ok = false, tries = 0;
+        do {
+          r = minR + Math.random() * (maxR - minR);
+          x = r + Math.random() * (W - 2 * r);
+          y = H - 16;
+          ok = bubbles.every(b => b.state !== 'rise' || Math.hypot(b.x - x, b.y - y) > r + b.r + 70);
+          tries++;
+        } while (!ok && tries < 40);
+        return { x, y, r, state: 'rise', vy: 0.35 + Math.random() * 0.45, wob: Math.random() * 6.28, pop: 0 };
       }
 
       function setup() {
         resize();
-        player = { x: W / 2, y: H / 2, size: 18, dir: 1, vx: 0, vy: 0, heading: 0 };
+        player = { x: W / 2, y: H / 2, size: 36, dir: 1, vx: 0, vy: 0, heading: 0 };
         foods = []; coins = []; hazards = []; particles = [];
         bubbles = [];
-        for (let i = 0; i < 14; i++) bubbles.push(makeBubble(true));
+        for (let i = 0; i < 3; i++) bubbles.push(makeBubble()); // בדיוק 3 בועות צפות
         seaweeds = [];
-        for (let i = 0; i < 5; i++) seaweeds.push({ x: (i + 0.5) / 5 * W, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
+        for (let i = 0; i < 8; i++) seaweeds.push({ x: (i + 0.5) / 8 * W + (Math.random() - 0.5) * 30, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
         snow = [];
         for (let i = 0; i < 26; i++) snow.push({ x: Math.random() * W, y: Math.random() * H, r: 0.6 + Math.random() * 1.4, vx: -0.15 + Math.random() * 0.06, vy: 0.08 + Math.random() * 0.22 });
         pebbles = [];
         for (let i = 0; i < 46; i++) pebbles.push({ x: Math.random() * W, y: H - 20 + Math.random() * 18, r: 1 + Math.random() * 2.2, c: Math.random() < 0.5 ? '#a9823f' : '#c9a063' });
+        grains = [];
+        for (let i = 0; i < 140; i++) grains.push({ x: Math.random() * W, y: H - 21 + Math.random() * 19, r: 0.5 + Math.random() * 0.9, c: Math.random() < 0.5 ? '#e8c878' : '#9c7a35' });
         score = 0; updateScoreUI();
-        camMode = 'full';
+        camMode = 'full'; person = '1st';
         foodTimer = 500; coinTimer = 5000; hazTimer = 4000;
         pointer.x = W / 2; pointer.y = H / 2;
       }
@@ -100,13 +113,13 @@
         if (!running) { fishHint.classList.add('hidden'); return; }
         fishHint.classList.remove('hidden');
         fishHint.textContent = (camMode === 'fish')
-          ? 'אתה הדג! לחץ במרכז כדי לצאת 🐟'
+          ? 'אתה הדג! E = מצלמה (גוף ראשון/שלישי), לחץ במרכז כדי לצאת 🐟'
           : 'לחץ על הדג כדי לראות מעיניו 🐟';
       }
 
       function toggleCam() {
         if (camMode === 'full') {
-          camMode = 'fish';
+          camMode = 'fish'; person = '1st';
           player.heading = player.dir > 0 ? 0 : Math.PI;
           pointer.x = W / 2; pointer.y = H / 2;
         } else {
@@ -121,8 +134,8 @@
       function spawnCoin() { coins.push({ x: 30 + Math.random() * (W - 60), y: 30 + Math.random() * (H - 60), bob: Math.random() * Math.PI * 2, life: 8000, collected: false }); }
       function spawnHazard() {
         const fromLeft = Math.random() < 0.5;
-        const r = 18 + Math.random() * 10;
-        hazards.push({ x: fromLeft ? -r : W + r, y: 40 + Math.random() * (H - 120), vx: (fromLeft ? 1 : -1) * (0.5 + Math.random() * 0.6), vy: (Math.random() - 0.5) * 0.4, r: r, phase: Math.random() * Math.PI * 2 });
+        const r = 30; // ~3x3 ס"מ
+        hazards.push({ x: fromLeft ? -r : W + r, y: 50 + Math.random() * (H - 160), vx: (fromLeft ? 1 : -1) * (0.5 + Math.random() * 0.5), vy: (Math.random() - 0.5) * 0.3, r: r, phase: Math.random() * Math.PI * 2 });
       }
 
       function addBurst(x, y, color) {
@@ -173,8 +186,7 @@
         if (foodTimer <= 0) { spawnFood(); foodTimer = 650 + Math.random() * 900; }
         coinTimer -= dt;
         if (coinTimer <= 0) { spawnCoin(); coinTimer = 6000 + Math.random() * 5000; }
-        hazTimer -= dt;
-        if (hazTimer <= 0 && hazards.length < 2) { spawnHazard(); hazTimer = 6000 + Math.random() * 5000; }
+        if (hazards.length < 1) spawnHazard(); // בדיוק מדוזה אחת
 
         for (const f of foods) f.y += f.vy * (dt / 16);
         foods = foods.filter(f => f.y < H + 20 && !f.eaten);
@@ -188,7 +200,7 @@
         // אכילה
         for (const f of foods) {
           if (!f.eaten && Math.hypot(f.x - player.x, f.y - player.y) < player.size + f.r) {
-            f.eaten = true; score++; player.size = Math.min(34, player.size + 0.35);
+            f.eaten = true; score++; player.size = Math.min(48, player.size + 0.35);
             addBurst(f.x, f.y, '#ffcc66'); updateScoreUI();
           }
         }
@@ -200,17 +212,25 @@
             addBurst(c.x, c.y, '#fbbf24');
           }
         }
-        // מדוזות
+        // מדוזות - בתצפית מעיני הדג הדג בלתי-פגיע
         for (const h of hazards) {
-          if (Math.hypot(h.x - player.x, h.y - player.y) < player.size + h.r * 0.6) {
+          if (camMode !== 'fish' && Math.hypot(h.x - player.x, h.y - player.y) < player.size + h.r * 0.6) {
             endGame(); break;
           }
         }
 
-        // בועות
-        for (const b of bubbles) { b.y -= b.s * (dt / 16); b.x += Math.sin(b.y * 0.02) * 0.3; }
-        bubbles = bubbles.filter(b => b.y > -10);
-        if (Math.random() < 0.04) bubbles.push(makeBubble(false));
+        // בועות - 3 צפות, פיצוץ איטי בהתנגשות בגבול/אובייקט
+        for (const b of bubbles) {
+          if (b.state === 'rise') {
+            b.y -= b.vy * (dt / 16); b.wob += 0.03; b.x += Math.sin(b.wob) * 0.3;
+            let pop = b.y <= b.r;
+            if (!pop && Math.hypot(b.x - player.x, b.y - player.y) < player.size + b.r) pop = true;
+            if (!pop) for (const h of hazards) { if (Math.hypot(b.x - h.x, b.y - h.y) < h.r + b.r) { pop = true; break; } }
+            if (pop) { b.state = 'pop'; b.pop = 0; }
+          } else { b.pop += dt / POP_MS; }
+        }
+        bubbles = bubbles.filter(b => b.state !== 'pop' || b.pop < 1);
+        while (bubbles.filter(b => b.state === 'rise').length < 3) bubbles.push(makeBubble());
 
         // חלקיקים
         for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= dt; }
@@ -252,18 +272,19 @@
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
       }
 
-      // קרקעית תלת-מימדית: דיונות + הצללת עומק + דעיכה למים
+      // קרקעית תלת-מימדית: חול צהבהב + דיונות + גרגירים + דעיכה למים
       function drawSand() {
         const top = H - 22;
         ctx.beginPath();
         ctx.moveTo(0, H); ctx.lineTo(0, top + dune(0));
         for (let x = 16; x <= W; x += 16) ctx.lineTo(x, top + dune(x));
         ctx.lineTo(W, H); ctx.closePath();
-        ctx.fillStyle = '#b8924f'; ctx.fill();
+        ctx.fillStyle = '#d9b86a'; ctx.fill();
         ctx.save(); ctx.clip();
         const g = ctx.createLinearGradient(0, top, 0, H);
-        g.addColorStop(0, 'rgba(232,205,140,0.95)'); g.addColorStop(0.45, 'rgba(160,120,60,0)'); g.addColorStop(1, 'rgba(35,22,8,0.6)');
+        g.addColorStop(0, 'rgba(245,222,150,0.95)'); g.addColorStop(0.45, 'rgba(170,140,70,0)'); g.addColorStop(1, 'rgba(60,40,12,0.6)');
         ctx.fillStyle = g; ctx.fillRect(0, top, W, H - top + 4);
+        for (const gr of grains) { ctx.fillStyle = gr.c; ctx.fillRect(gr.x, gr.y, gr.r * 2, gr.r * 2); }
         const f = ctx.createLinearGradient(0, top, 0, H - 6);
         f.addColorStop(0, 'rgba(10,58,94,0.75)'); f.addColorStop(0.5, 'rgba(10,58,94,0)');
         ctx.fillStyle = f; ctx.fillRect(0, top, W, 12);
@@ -294,6 +315,18 @@
       }
 
       function drawBubble(b) {
+        if (b.state === 'pop') {
+          const pr = b.r * (1 + b.pop * 1.7);
+          const a = 1 - b.pop;
+          ctx.globalAlpha = a * 0.6;
+          ctx.strokeStyle = 'rgba(220,240,255,0.7)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(b.x, b.y, pr, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = a * 0.22;
+          ctx.fillStyle = 'rgba(220,240,255,1)';
+          ctx.beginPath(); ctx.arc(b.x, b.y, pr, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+          return;
+        }
         const g = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.2, b.x, b.y, b.r);
         g.addColorStop(0, 'rgba(255,255,255,0.05)'); g.addColorStop(0.7, 'rgba(200,230,255,0.08)');
         g.addColorStop(0.92, 'rgba(220,240,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0.05)');
@@ -336,25 +369,26 @@
       function drawHazard(h) {
         const r = h.r;
         const g = ctx.createRadialGradient(h.x - r * 0.2, h.y - r * 0.5, r * 0.2, h.x, h.y, r);
-        g.addColorStop(0, 'rgba(220,200,255,0.9)'); g.addColorStop(0.6, 'rgba(167,139,250,0.85)'); g.addColorStop(1, 'rgba(120,90,200,0.8)');
+        g.addColorStop(0, 'rgba(232,190,255,0.9)'); g.addColorStop(0.6, 'rgba(168,85,247,0.85)'); g.addColorStop(1, 'rgba(157,23,77,0.9)');
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(h.x, h.y, r, Math.PI, 0); ctx.fill();
-        ctx.strokeStyle = 'rgba(235,220,255,0.6)'; ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(245,210,255,0.6)'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(h.x, h.y, r, Math.PI, 0); ctx.stroke();
-        ctx.strokeStyle = 'rgba(167,139,250,0.7)'; ctx.lineWidth = 2.5;
+        // מחושים יורדים מתחתית המדוזה
+        ctx.strokeStyle = 'rgba(190,24,93,0.8)'; ctx.lineWidth = 2.5;
         for (let i = -2; i <= 2; i++) {
           const tx = h.x + i * r * 0.32;
           ctx.beginPath(); ctx.moveTo(tx, h.y);
-          for (let k = 1; k <= 4; k++) {
-            const yy = h.y + k * r * 0.3;
+          for (let k = 1; k <= 5; k++) {
+            const yy = h.y + k * r * 0.28;
             const xx = tx + Math.sin(h.phase + i + k) * 4;
             ctx.lineTo(xx, yy);
           }
           ctx.stroke();
         }
         ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(h.x - r * 0.3, h.y - r * 0.2, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(h.x + r * 0.3, h.y - r * 0.2, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(h.x - r * 0.3, h.y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(h.x + r * 0.3, h.y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
       }
 
       function drawFish(p) {
@@ -363,20 +397,19 @@
         ctx.scale(p.dir, 1);
         const s = p.size;
         const wig = Math.sin(t * 0.02) * s * 0.18;
-        ctx.fillStyle = '#ff6b1a';
+        ctx.fillStyle = '#ff8c1a';
         ctx.beginPath();
         ctx.moveTo(-s * 0.8, 0);
         ctx.lineTo(-s * 1.6, -s * 0.5 + wig);
         ctx.lineTo(-s * 1.5, 0);
         ctx.lineTo(-s * 1.6, s * 0.5 + wig);
         ctx.closePath(); ctx.fill();
-        const g = ctx.createRadialGradient(s * 0.3, -s * 0.2, s * 0.1, 0, 0, s);
-        g.addColorStop(0, '#ffb070'); g.addColorStop(0.6, '#ff8c42'); g.addColorStop(1, '#d96820');
+        // גוף - גרדיאנט חלק כתום-צהוב (ללא פסים)
+        const g = ctx.createLinearGradient(0, -s * 0.62, 0, s * 0.62);
+        g.addColorStop(0, '#ff8c1a'); g.addColorStop(0.55, '#ffb02e'); g.addColorStop(1, '#ffd54a');
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ffd29c';
-        ctx.beginPath(); ctx.ellipse(0, s * 0.2, s * 0.7, s * 0.35, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ff6b1a';
+        ctx.fillStyle = '#ff9d33';
         ctx.beginPath(); ctx.ellipse(-s * 0.1, -s * 0.45, s * 0.35, s * 0.18, -0.3, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(s * 0.5, -s * 0.12, s * 0.2, 0, Math.PI * 2); ctx.fill();
@@ -421,12 +454,12 @@
       function render() {
         drawWater();
         ctx.save();
-        if (camMode === 'fish') {
-          // תצפית מעיני הדג: סיבוב כך שכיוון התנועה = למעלה
+        const pov = camMode === 'fish';
+        if (pov && person === '1st') {
           const phi = -Math.PI / 2 - player.heading;
-          ctx.translate(W / 2, H / 2);
-          ctx.rotate(phi);
-          ctx.translate(-player.x, -player.y);
+          ctx.translate(W / 2, H / 2); ctx.rotate(phi); ctx.translate(-player.x, -player.y);
+        } else if (pov && person === '3rd') {
+          ctx.translate(W / 2 - player.x, H / 2 - player.y); // מצלמת מרדף (גוף שלישי)
         }
         drawSand();
         for (const p of pebbles) withPersp(p.x, p.y, () => { ctx.globalAlpha = fogOf(p.x, p.y); drawPebble(p); });
@@ -436,10 +469,10 @@
         for (const c of coins) withPersp(c.x, c.y, () => drawCoin(c, fogOf(c.x, c.y)));
         for (const h of hazards) withPersp(h.x, h.y, () => { ctx.globalAlpha = fogOf(h.x, h.y); drawHazard(h); });
         ctx.globalAlpha = 1;
-        if (camMode !== 'fish') drawFish(player); // בתצפית מעיני הדג הדג עצמו נעלם
+        if (!pov || person === '3rd') drawFish(player); // בגוף ראשון הדג עצמו נעלם
         for (const p of particles) drawParticle(p);
         ctx.restore();
-        if (camMode === 'fish') { drawSnow(); drawVignette(); drawSnout(); }
+        if (pov) { drawSnow(); drawVignette(); if (person === '1st') drawSnout(); }
       }
 
       function loop(now) {
@@ -489,6 +522,10 @@
 
       startBtn.addEventListener('click', startGame);
       restartBtn.addEventListener('click', startGame);
+      window.addEventListener('keydown', e => {
+        if (!running || camMode !== 'fish') return;
+        if (e.key === 'e' || e.key === 'E') { person = (person === '1st') ? '3rd' : '1st'; updateHint(); }
+      });
       window.addEventListener('resize', () => { if (running) resize(); });
 
       /* אתחול */
