@@ -12,6 +12,7 @@
       <h1>דג באקווריום 🐠</h1>
       <div class="aq-stats">
         <span class="stat">ניקוד: <b id="score">0</b></span>
+        <span class="stat hidden" id="abilityStat"></span>
       </div>
 
       <div class="canvas-wrap">
@@ -28,7 +29,26 @@
 
       <div class="game-controls">
         <button class="btn" id="restart" type="button">התחל מחדש</button>
+        <button class="btn btn-secondary" id="shopBtn" type="button">חנות 🛒</button>
         <a href="index.html" class="btn btn-secondary">חזרה לדף הבית</a>
+      </div>
+
+      <div class="shop-overlay hidden" id="shop">
+        <div class="shop-card">
+          <h2>חנות 🛒</h2>
+          <p class="shop-balance">יתרה: <b id="shopBalance">0</b> 🪙</p>
+          <div class="shop-item">
+            <span>שנה צבע דג (גרדיאנט אקראי)</span>
+            <b>100 🪙</b>
+            <button class="btn" id="buyColor" type="button">קנה</button>
+          </div>
+          <div class="shop-item">
+            <span>הפוך לתמנון (יכולת מיוחדת)</span>
+            <b>1000 🪙</b>
+            <button class="btn" id="buyOctopus" type="button">קנה</button>
+          </div>
+          <button class="btn btn-secondary" id="closeShop" type="button">סגור</button>
+        </div>
       </div>
     </section>
   </main>
@@ -51,6 +71,13 @@
       const restartBtn = document.getElementById('restart');
       const scoreEl = document.getElementById('score');
       const fishHint = document.getElementById('fishHint');
+      const abilityStat = document.getElementById('abilityStat');
+      const shopEl = document.getElementById('shop');
+      const shopBalance = document.getElementById('shopBalance');
+      const shopBtn = document.getElementById('shopBtn');
+      const buyColorBtn = document.getElementById('buyColor');
+      const buyOctopusBtn = document.getElementById('buyOctopus');
+      const closeShopBtn = document.getElementById('closeShop');
 
       let W = 600, H = 600, DPR = 1;
       let player, foods, coins, hazards, bubbles, seaweeds, particles, snow, pebbles, grains;
@@ -60,6 +87,10 @@
       let person = '1st'; // בתוך fish POV: '1st' או '3rd' (מקש E)
       const POP_MS = 1800; // אורך פיצוץ בועה (סלואו-מושן)
       const pointer = { x: 300, y: 300 };
+      let skin = 'fish'; // 'fish' או 'octopus'
+      let fishColors = ['#ff8c1a', '#ffb02e', '#ffd54a'];
+      let abilityCD = 0; // קואורדאון יכולת התמנון (ms)
+      let shopOpen = false;
 
       function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
       function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
@@ -108,6 +139,25 @@
       }
 
       function updateScoreUI() { scoreEl.textContent = score; }
+
+      function coins() { return window.NoamCoins ? window.NoamCoins.get() : 0; }
+      function rndColor() { return 'hsl(' + Math.floor(Math.random() * 360) + ',85%,60%)'; }
+      function randomGradient() { return [rndColor(), rndColor(), rndColor()]; }
+
+      function updateAbilityUI() {
+        if (skin !== 'octopus') { abilityStat.textContent = ''; abilityStat.classList.add('hidden'); return; }
+        abilityStat.classList.remove('hidden');
+        abilityStat.textContent = abilityCD > 0 ? ('יכולת: ' + Math.ceil(abilityCD / 1000) + 's') : 'יכולת מוכנה ✓';
+      }
+
+      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coins(); }
+      function closeShop() { shopOpen = false; shopEl.classList.add('hidden'); }
+      function buyColorItem() {
+        if (window.NoamCoins && window.NoamCoins.spend(100)) { fishColors = randomGradient(); shopBalance.textContent = coins(); }
+      }
+      function buyOctopusItem() {
+        if (window.NoamCoins && window.NoamCoins.spend(1000)) { skin = 'octopus'; updateAbilityUI(); shopBalance.textContent = coins(); }
+      }
 
       function updateHint() {
         if (!running) { fishHint.classList.add('hidden'); return; }
@@ -161,6 +211,8 @@
       }
 
       function update(dt) {
+        if (shopOpen) return; // מושהה בזמן חנות
+        if (abilityCD > 0) { abilityCD = Math.max(0, abilityCD - dt); updateAbilityUI(); }
         // יעד תנועה לפי מצב מצלמה
         let tx, ty;
         if (camMode === 'fish') {
@@ -397,24 +449,57 @@
         ctx.scale(p.dir, 1);
         const s = p.size;
         const wig = Math.sin(t * 0.02) * s * 0.18;
-        ctx.fillStyle = '#ff8c1a';
+        ctx.fillStyle = fishColors[0];
         ctx.beginPath();
         ctx.moveTo(-s * 0.8, 0);
         ctx.lineTo(-s * 1.6, -s * 0.5 + wig);
         ctx.lineTo(-s * 1.5, 0);
         ctx.lineTo(-s * 1.6, s * 0.5 + wig);
         ctx.closePath(); ctx.fill();
-        // גוף - גרדיאנט חלק כתום-צהוב (ללא פסים)
+        // גוף - גרדיאנט חלק (ללא פסים)
         const g = ctx.createLinearGradient(0, -s * 0.62, 0, s * 0.62);
-        g.addColorStop(0, '#ff8c1a'); g.addColorStop(0.55, '#ffb02e'); g.addColorStop(1, '#ffd54a');
+        g.addColorStop(0, fishColors[0]); g.addColorStop(0.55, fishColors[1]); g.addColorStop(1, fishColors[2]);
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ff9d33';
+        ctx.fillStyle = fishColors[1];
         ctx.beginPath(); ctx.ellipse(-s * 0.1, -s * 0.45, s * 0.35, s * 0.18, -0.3, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(s * 0.5, -s * 0.12, s * 0.2, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#113355';
         ctx.beginPath(); ctx.arc(s * 0.56, -s * 0.12, s * 0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      function drawOctopus(p) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        const s = p.size;
+        // מעטפת עגולה
+        const g = ctx.createLinearGradient(0, -s * 0.8, 0, s * 0.5);
+        g.addColorStop(0, fishColors[0]); g.addColorStop(0.5, fishColors[1]); g.addColorStop(1, fishColors[2]);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(0, -s * 0.1, s * 0.85, s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+        // 8 מחושים
+        ctx.strokeStyle = fishColors[1]; ctx.lineWidth = s * 0.16; ctx.lineCap = 'round';
+        for (let i = 0; i < 8; i++) {
+          const a = Math.PI * 0.1 + i * (Math.PI * 0.8 / 7);
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * s * 0.6, Math.sin(a) * s * 0.45 - s * 0.05);
+          for (let k = 1; k <= 5; k++) {
+            const tk = k / 5;
+            const wob = Math.sin(t * 0.006 + i + k) * s * 0.12;
+            const r = s * (0.6 + tk * 0.95);
+            ctx.lineTo(Math.cos(a) * r + wob, Math.sin(a) * r - s * 0.05 + tk * s * 0.1);
+          }
+          ctx.stroke();
+        }
+        // עיניים
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(-s * 0.22, -s * 0.25, s * 0.14, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.25, s * 0.14, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#113355';
+        ctx.beginPath(); ctx.arc(-s * 0.2, -s * 0.23, s * 0.07, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(s * 0.24, -s * 0.23, s * 0.07, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
 
@@ -469,7 +554,7 @@
         for (const c of coins) withPersp(c.x, c.y, () => drawCoin(c, fogOf(c.x, c.y)));
         for (const h of hazards) withPersp(h.x, h.y, () => { ctx.globalAlpha = fogOf(h.x, h.y); drawHazard(h); });
         ctx.globalAlpha = 1;
-        if (!pov || person === '3rd') drawFish(player); // בגוף ראשון הדג עצמו נעלם
+        if (!pov || person === '3rd') { if (skin === 'octopus') drawOctopus(player); else drawFish(player); } // בגוף ראשון השחקן עצמו נעלם
         for (const p of particles) drawParticle(p);
         ctx.restore();
         if (pov) { drawSnow(); drawVignette(); if (person === '1st') drawSnout(); }
@@ -527,6 +612,20 @@
         if (e.key === 'e' || e.key === 'E') { person = (person === '1st') ? '3rd' : '1st'; updateHint(); }
       });
       window.addEventListener('resize', () => { if (running) resize(); });
+
+      shopBtn.addEventListener('click', () => { shopEl.classList.contains('hidden') ? openShop() : closeShop(); });
+      closeShopBtn.addEventListener('click', closeShop);
+      buyColorBtn.addEventListener('click', buyColorItem);
+      buyOctopusBtn.addEventListener('click', buyOctopusItem);
+      // יכולת תמנון: קליק ימני - מושך את כל האוכל לשחקן מיד, קואורדאון 60s
+      canvas.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (!running || shopOpen || skin !== 'octopus' || abilityCD > 0) return;
+        let count = 0;
+        for (const f of foods) { if (!f.eaten) { f.eaten = true; count++; addBurst(f.x, f.y, '#ffcc66'); } }
+        if (count > 0) { score += count; player.size = Math.min(48, player.size + count * 0.35); updateScoreUI(); addBurst(player.x, player.y, '#a78bfa'); }
+        abilityCD = 60000; updateAbilityUI();
+      });
 
       /* אתחול */
       setup();

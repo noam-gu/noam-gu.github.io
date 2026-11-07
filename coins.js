@@ -120,6 +120,14 @@
     }
   }
 
+  /* הוצאה מיידית (ללא אנימציית מטבעות) - לחנות */
+  function spendCoins(n) {
+    const actual = Math.min(n, coins);
+    if (actual <= 0) return false;
+    coins -= actual; render(); saveCoins(coins); bump();
+    return true;
+  }
+
   /* חשיפה גלובלית */
-  window.NoamCoins = { add: award, lose: loseCoins, get: function () { return coins; } };
+  window.NoamCoins = { add: award, lose: loseCoins, spend: spendCoins, get: function () { return coins; } };
 })();
