@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>שחמט - Noam</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="chess-game">
+      <h1>שחמט ♟️</h1>
+
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode2p" type="button">2 שחקנים</button>
+        <button class="mode-btn" id="modeBot" type="button">מול הרובוט</button>
+      </div>
+
+      <div class="chess-status" id="status">תור הלבן</div>
+
+      <div class="chess-wrap">
+        <div class="chess-board" id="board"></div>
+
+        <div class="promo-overlay hidden" id="promo"></div>
+
+        <div class="game-overlay hidden" id="endOverlay">
+          <div class="overlay-card">
+            <h2 id="endTitle">סוף המשחק</h2>
+            <p id="endMsg"></p>
+            <button class="btn" id="endBtn" type="button">משחק חדש</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="game-controls">
+        <button class="btn" id="newGame" type="button">משחק חדש</button>
+        <button class="btn btn-secondary" id="undo" type="button">בטל מהלך</button>
+        <a href="index.html" class="btn btn-secondary">חזרה לדף הבית</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; <span id="year"></span> Noam</p>
+  </footer>
+
+  <script src="chess.js"></script>
+  <script src="coins.js"></script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    (function () {
+      const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+      const FILES = 'abcdefgh';
+
+      // טבלאות ערך מיקום (לבן, 0=a8 ... 63=h1)
+      const PST = {
+        p: [0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10, 5,5,10,25,25,10,5,5, 0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5, 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0],
+        n: [-50,-40,-30,-30,-30,-30,-40,-50, -40,-20,0,0,0,0,-20,-40, -30,0,10,15,15,10,0,-30, -30,5,15,20,20,15,5,-30, -30,0,15,20,20,15,0,-30, -30,5,10,15,15,10,5,-30, -40,-20,0,5,5,0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50],
+        b: [-20,-10,-10,-10,-10,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,10,10,5,0,-10, -10,5,5,10,10,5,5,-10, -10,0,10,10,10,10,0,-10, -10,10,10,10,10,10,10,-10, -10,5,0,0,0,0,5,-10, -20,-10,-10,-10,-10,-10,-10,-20],
+        r: [0,0,0,0,0,0,0,0, 5,10,10,10,10,10,10,5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, 0,0,0,5,5,0,0,0],
+        q: [-20,-10,-10,-5,-5,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,5,5,5,0,-10, -5,0,5,5,5,5,0,-5, -5,0,5,5,5,5,0,-5, -10,0,5,5,5,5,0,-10, -10,0,0,0,0,0,0,-10, -20,-10,-10,-5,-5,-10,-10,-20],
+        k: [-30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -20,-30,-30,-40,-40,-30,-30,-20, -10,-20,-20,-20,-20,-20,-20,-10, 20,20,0,0,0,0,20,20, 20,30,10,0,0,10,30,20]
+      };
+      const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+      const DEPTH = 3;
+
+      const boardEl = document.getElementById('board');
+      const statusEl = document.getElementById('status');
+      const newGameBtn = document.getElementById('newGame');
+      const undoBtn = document.getElementById('undo');
+      const mode2pBtn = document.getElementById('mode2p');
+      const modeBotBtn = document.getElementById('modeBot');
+      const promoEl = document.getElementById('promo');
+      const endOverlay = document.getElementById('endOverlay');
+      const endTitle = document.getElementById('endTitle');
+      const endMsg = document.getElementById('endMsg');
+      const endBtn = document.getElementById('endBtn');
+
+      let game = new Chess();
+      let vsBot = false;
+      let selected = null;
+      let legalTargets = [];
+      let botThinking = false;
+      let gameOver = false;
+
+      function file(c) { return FILES[c]; }
+      function square(r, c) { return file(c) + (8 - r); }
+
+      function setStatus() {
+        if (gameOver) return;
+        if (botThinking) { statusEl.textContent = 'הרובוט חושב...'; return; }
+        const turn = game.turn();
+        const who = vsBot && turn === 'b' ? 'הרובוט' : (turn === 'w' ? 'הלבן' : 'השחור');
+        let s = 'תור ' + who;
+        if (game.in_check()) s += ' — כיסוי!';
+        statusEl.textContent = s;
+      }
+
+      function render() {
+        const gb = game.board();
+        const last = game.history({ verbose: true }).slice(-1)[0];
+        const inCheck = game.in_check();
+        const turn = game.turn();
+        let kingSq = null;
+        if (inCheck) {
+          for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+            const p = gb[r][c];
+            if (p && p.type === 'k' && p.color === turn) kingSq = square(r, c);
+          }
+        }
+        boardEl.innerHTML = '';
+        for (let i = 0; i < 64; i++) {
+          const r = Math.floor(i / 8), c = i % 8;
+          const sq = square(r, c);
+          const div = document.createElement('div');
+          div.className = 'sq ' + (((r + c) % 2 === 0) ? 'light' : 'dark');
+          div.dataset.square = sq;
+          if (selected === sq) div.classList.add('selected');
+          if (last && (last.from === sq || last.to === sq)) div.classList.add('last');
+          if (kingSq === sq) div.classList.add('check');
+          const tgt = legalTargets.find(m => m.to === sq);
+          if (tgt) { div.classList.add('legal'); if (game.get(sq)) div.classList.add('cap'); }
+          const p = gb[r][c];
+          if (p) {
+            const span = document.createElement('span');
+            span.className = 'piece ' + p.color;
+            span.textContent = GLYPH[p.type];
+            div.appendChild(span);
+          }
+          boardEl.appendChild(div);
+        }
+      }
+
+      /* ===== קלט ===== */
+      boardEl.addEventListener('click', function (e) {
+        const sqEl = e.target.closest('.sq');
+        if (!sqEl) return;
+        onSquareClick(sqEl.dataset.square);
+      });
+
+      function onSquareClick(sq) {
+        if (gameOver || botThinking) return;
+        if (vsBot && game.turn() === 'b') return; // לא תור האדם
+        const piece = game.get(sq);
+        if (selected) {
+          const moves = legalTargets.filter(m => m.to === sq);
+          if (moves.length) {
+            if (moves[0].flags.includes('p')) showPromotion(selected, sq, moves[0].color);
+            else doMove({ from: selected, to: sq });
+            return;
+          }
+          if (piece && piece.color === game.turn()) {
+            selected = sq; legalTargets = game.moves({ square: sq, verbose: true }); render(); return;
+          }
+          selected = null; legalTargets = []; render(); return;
+        }
+        if (piece && piece.color === game.turn()) {
+          selected = sq; legalTargets = game.moves({ square: sq, verbose: true }); render();
+        }
+      }
+
+      function showPromotion(from, to, color) {
+        promoEl.innerHTML = '';
+        ['q', 'r', 'b', 'n'].forEach(t => {
+          const b = document.createElement('button');
+          b.className = 'piece ' + color;
+          b.type = 'button';
+          b.textContent = GLYPH[t];
+          b.addEventListener('click', () => { promoEl.classList.add('hidden'); doMove({ from, to, promotion: t }); });
+          promoEl.appendChild(b);
+        });
+        promoEl.classList.remove('hidden');
+      }
+
+      function doMove(mv) {
+        const r = game.move(mv);
+        if (!r) { selected = null; legalTargets = []; render(); return; }
+        selected = null; legalTargets = [];
+        render(); setStatus();
+        afterMove();
+      }
+
+      function afterMove() {
+        if (game.is_checkmate() || game.is_stalemate() || game.is_draw() || game.is_insufficient_material() || game.is_threefold_repetition()) {
+          finishGame(); return;
+        }
+        if (vsBot && game.turn() === 'b' && !gameOver) {
+          botThinking = true; setStatus();
+          setTimeout(() => {
+            botMove();
+            botThinking = false;
+            render(); setStatus();
+            if (game.is_checkmate() || game.is_stalemate() || game.is_draw() || game.is_insufficient_material() || game.is_threefold_repetition()) finishGame();
+          }, 220);
+        }
+      }
+
+      function finishGame() {
+        gameOver = true; botThinking = false;
+        let title, msg;
+        if (game.is_checkmate()) {
+          const winner = game.turn() === 'w' ? 'b' : 'w'; // הצד שלא בתור ניצח
+          if (vsBot) {
+            if (winner === 'w') { title = 'ניצחת! 🎉'; if (window.NoamCoins) window.NoamCoins.add(20); }
+            else { title = 'הרובוט ניצח 🤖'; if (window.NoamCoins) window.NoamCoins.lose(1); }
+            msg = 'מט — ' + (winner === 'w' ? '+20 מטבעות' : '-1 מטבעה');
+          } else {
+            title = winner === 'w' ? 'הלבן ניצח! 🎉' : 'השחור ניצח! 🎉';
+            if (window.NoamCoins) window.NoamCoins.add(20);
+            msg = 'מט — +20 מטבעות';
+          }
+        } else {
+          title = 'תיקו 🤝';
+          msg = 'המשחק הסתיים בתיקו';
+        }
+        endTitle.textContent = title;
+        endMsg.textContent = msg;
+        endOverlay.classList.remove('hidden');
+        setStatus();
+      }
+
+      /* ===== בוט (minimax + alpha-beta) ===== */
+      let nodes = 0;
+      const NODE_CAP = 120000;
+
+      function evalBoard() {
+        const gb = game.board();
+        let score = 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+          const p = gb[r][c];
+          if (!p) continue;
+          const v = VAL[p.type];
+          const pst = PST[p.type] ? (p.color === 'w' ? PST[p.type][r * 8 + c] : PST[p.type][(7 - r) * 8 + c]) : 0;
+          score += p.color === 'b' ? (v + pst) : -(v + pst);
+        }
+        return score;
+      }
+
+      function orderMoves(moves) {
+        return moves.sort((a, b) => moveScore(b) - moveScore(a));
+      }
+      function moveScore(m) {
+        let s = 0;
+        if (m.captured) s += VAL[m.captured] * 10;
+        if (m.promotion) s += 800;
+        return s;
+      }
+
+      function search(depth, alpha, beta, maximizing) {
+        nodes++;
+        if (nodes > NODE_CAP) return evalBoard();
+        if (game.is_checkmate()) return maximizing ? -100000 - depth : 100000 + depth;
+        if (game.is_stalemate() || game.is_draw() || game.is_insufficient_material()) return 0;
+        if (depth === 0) return evalBoard();
+        const moves = orderMoves(game.moves({ verbose: true }));
+        if (maximizing) {
+          let best = -Infinity;
+          for (const m of moves) {
+            game.move({ from: m.from, to: m.to, promotion: m.promotion });
+            const v = search(depth - 1, alpha, beta, false);
+            game.undo();
+            if (v > best) best = v;
+            if (best > alpha) alpha = best;
+            if (alpha >= beta) break;
+          }
+          return best;
+        } else {
+          let best = Infinity;
+          for (const m of moves) {
+            game.move({ from: m.from, to: m.to, promotion: m.promotion });
+            const v = search(depth - 1, alpha, beta, true);
+            game.undo();
+            if (v < best) best = v;
+            if (best < beta) beta = best;
+            if (alpha >= beta) break;
+          }
+          return best;
+        }
+      }
+
+      function botMove() {
+        nodes = 0;
+        const moves = orderMoves(game.moves({ verbose: true }));
+        let bestVal = -Infinity;
+        const scored = [];
+        for (const m of moves) {
+          game.move({ from: m.from, to: m.to, promotion: m.promotion });
+          const v = search(DEPTH - 1, -Infinity, Infinity, false);
+          game.undo();
+          scored.push({ m, v });
+          if (v > bestVal) bestVal = v;
+        }
+        // בחירה אקראית מבין המהלכים הקרובים לטוב ביותר (מאפשרת לנצח את הרובוט)
+        const candidates = scored.filter(s => s.v >= bestVal - 30);
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        game.move({ from: pick.m.from, to: pick.m.to, promotion: pick.m.promotion });
+      }
+
+      /* ===== כפתורים ===== */
+      function newGame() {
+        game = new Chess();
+        selected = null; legalTargets = []; gameOver = false; botThinking = false;
+        promoEl.classList.add('hidden');
+        endOverlay.classList.add('hidden');
+        render(); setStatus();
+      }
+
+      function undo() {
+        if (botThinking || gameOver) return;
+        if (vsBot) { game.undo(); game.undo(); } // בטל גם את מהלך הרובוט
+        else game.undo();
+        selected = null; legalTargets = [];
+        render(); setStatus();
+      }
+
+      function setMode(bot) {
+        vsBot = bot;
+        mode2pBtn.classList.toggle('active', !bot);
+        modeBotBtn.classList.toggle('active', bot);
+        newGame();
+      }
+
+      newGameBtn.addEventListener('click', newGame);
+      endBtn.addEventListener('click', newGame);
+      undoBtn.addEventListener('click', undo);
+      mode2pBtn.addEventListener('click', () => setMode(false));
+      modeBotBtn.addEventListener('click', () => setMode(true));
+
+      newGame();
+    })();
+  </script>
+</body>
+</html>
