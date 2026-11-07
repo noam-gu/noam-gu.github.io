@@ -140,7 +140,7 @@
 
       function updateScoreUI() { scoreEl.textContent = score; }
 
-      function coins() { return window.NoamCoins ? window.NoamCoins.get() : 0; }
+      function coinBalance() { return window.NoamCoins ? window.NoamCoins.get() : 0; }
       function rndColor() { return 'hsl(' + Math.floor(Math.random() * 360) + ',85%,60%)'; }
       function randomGradient() { return [rndColor(), rndColor(), rndColor()]; }
 
@@ -150,13 +150,13 @@
         abilityStat.textContent = abilityCD > 0 ? ('יכולת: ' + Math.ceil(abilityCD / 1000) + 's') : 'יכולת מוכנה ✓';
       }
 
-      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coins(); }
+      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coinBalance(); }
       function closeShop() { shopOpen = false; shopEl.classList.add('hidden'); }
       function buyColorItem() {
-        if (window.NoamCoins && window.NoamCoins.spend(100)) { fishColors = randomGradient(); shopBalance.textContent = coins(); }
+        if (window.NoamCoins && window.NoamCoins.spend(100)) { fishColors = randomGradient(); shopBalance.textContent = coinBalance(); }
       }
       function buyOctopusItem() {
-        if (window.NoamCoins && window.NoamCoins.spend(1000)) { skin = 'octopus'; updateAbilityUI(); shopBalance.textContent = coins(); }
+        if (window.NoamCoins && window.NoamCoins.spend(1000)) { skin = 'octopus'; updateAbilityUI(); shopBalance.textContent = coinBalance(); }
       }
 
       function updateHint() {
