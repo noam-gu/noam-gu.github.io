@@ -37,15 +37,13 @@
         <div class="shop-card">
           <h2>חנות 🛒</h2>
           <p class="shop-balance">יתרה: <b id="shopBalance">0</b> 🪙</p>
+          <h3>צבע דג (100 🪙 צבע חדש · מעבר בין צבעים שברשותך בחינם)</h3>
+          <div class="palette" id="colorPalette"></div>
+          <h3>דמות</h3>
           <div class="shop-item">
-            <span>שנה צבע דג (גרדיאנט אקראי)</span>
-            <b>100 🪙</b>
-            <button class="btn" id="buyColor" type="button">קנה</button>
-          </div>
-          <div class="shop-item">
-            <span>הפוך לתמנון (יכולת מיוחדת)</span>
-            <b>1000 🪙</b>
-            <button class="btn" id="buyOctopus" type="button">קנה</button>
+            <span>תמנון אדום — יכולת מיוחדת</span>
+            <b id="octopusPrice">1000 🪙</b>
+            <button class="btn" id="octopusAction" type="button">קנה</button>
           </div>
           <button class="btn btn-secondary" id="closeShop" type="button">סגור</button>
         </div>
@@ -75,8 +73,9 @@
       const shopEl = document.getElementById('shop');
       const shopBalance = document.getElementById('shopBalance');
       const shopBtn = document.getElementById('shopBtn');
-      const buyColorBtn = document.getElementById('buyColor');
-      const buyOctopusBtn = document.getElementById('buyOctopus');
+      const colorPalette = document.getElementById('colorPalette');
+      const octopusPrice = document.getElementById('octopusPrice');
+      const octopusAction = document.getElementById('octopusAction');
       const closeShopBtn = document.getElementById('closeShop');
 
       let W = 600, H = 600, DPR = 1;
@@ -88,7 +87,18 @@
       const POP_MS = 1800; // אורך פיצוץ בועה (סלואו-מושן)
       const pointer = { x: 300, y: 300 };
       let skin = 'fish'; // 'fish' או 'octopus'
-      let fishColors = ['#ff8c1a', '#ffb02e', '#ffd54a'];
+      let colorPresets = [
+        { name: 'כתום', colors: ['#ff8c1a', '#ffb02e', '#ffd54a'], owned: true },
+        { name: 'אדום', colors: ['#ef4444', '#f87171', '#fca5a5'], owned: false },
+        { name: 'כחול', colors: ['#3b82f6', '#60a5fa', '#93c5fd'], owned: false },
+        { name: 'ירוק', colors: ['#22c55e', '#4ade80', '#86efac'], owned: false },
+        { name: 'סגול', colors: ['#8b5cf6', '#a78bfa', '#c4b5fd'], owned: false },
+        { name: 'ורוד', colors: ['#ec4899', '#f472b6', '#f9a8d4'], owned: false },
+        { name: 'טורקיז', colors: ['#06b6d4', '#22d3ee', '#67e8f9'], owned: false },
+        { name: 'זהב', colors: ['#eab308', '#facc15', '#fde047'], owned: false }
+      ];
+      let fishColors = colorPresets[0].colors;
+      let octopusOwned = false;
       let abilityCD = 0; // קואורדאון יכולת התמנון (ms)
       let shopOpen = false;
 
@@ -141,23 +151,38 @@
       function updateScoreUI() { scoreEl.textContent = score; }
 
       function coinBalance() { return window.NoamCoins ? window.NoamCoins.get() : 0; }
-      function rndColor() { return 'hsl(' + Math.floor(Math.random() * 360) + ',85%,60%)'; }
-      function randomGradient() { return [rndColor(), rndColor(), rndColor()]; }
 
       function updateAbilityUI() {
-        if (skin !== 'octopus') { abilityStat.textContent = ''; abilityStat.classList.add('hidden'); return; }
+        if (skin !== 'octopus') { abilityStat.textContent = ''; abilityStat.classList.add('hidden'); abilityStat.classList.remove('cd'); return; }
         abilityStat.classList.remove('hidden');
-        abilityStat.textContent = abilityCD > 0 ? ('יכולת: ' + Math.ceil(abilityCD / 1000) + 's') : 'יכולת מוכנה ✓';
+        if (abilityCD > 0) { abilityStat.textContent = 'היכולת תהיה מוכנה בעוד: ' + Math.ceil(abilityCD / 1000) + 's'; abilityStat.classList.add('cd'); }
+        else { abilityStat.textContent = 'יכולת מוכנה ✓'; abilityStat.classList.remove('cd'); }
       }
 
-      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coinBalance(); }
+      function renderPalette() {
+        colorPalette.innerHTML = '';
+        colorPresets.forEach((p, i) => {
+          const sw = document.createElement('button');
+          sw.type = 'button';
+          sw.className = 'swatch' + (p.owned ? '' : ' locked') + (fishColors === p.colors ? ' selected' : '');
+          sw.dataset.i = i;
+          sw.style.background = 'linear-gradient(135deg,' + p.colors[0] + ',' + p.colors[1] + ',' + p.colors[2] + ')';
+          sw.title = p.name + (p.owned ? '' : ' — 100 🪙');
+          sw.textContent = p.owned ? (fishColors === p.colors ? '✓' : p.name) : '100 🪙';
+          colorPalette.appendChild(sw);
+        });
+      }
+      function handleSwatch(i) {
+        const p = colorPresets[i];
+        if (p.owned) { fishColors = p.colors; renderPalette(); }
+        else if (window.NoamCoins && window.NoamCoins.spend(100)) { p.owned = true; fishColors = p.colors; renderPalette(); shopBalance.textContent = coinBalance(); }
+      }
+      function renderOctopusRow() {
+        if (octopusOwned) { octopusPrice.textContent = 'בבעלותך'; octopusAction.textContent = (skin === 'octopus') ? 'חזור לדג' : 'הפוך לתמנון'; }
+        else { octopusPrice.textContent = '1000 🪙'; octopusAction.textContent = 'קנה'; }
+      }
+      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coinBalance(); renderPalette(); renderOctopusRow(); }
       function closeShop() { shopOpen = false; shopEl.classList.add('hidden'); }
-      function buyColorItem() {
-        if (window.NoamCoins && window.NoamCoins.spend(100)) { fishColors = randomGradient(); shopBalance.textContent = coinBalance(); }
-      }
-      function buyOctopusItem() {
-        if (window.NoamCoins && window.NoamCoins.spend(1000)) { skin = 'octopus'; updateAbilityUI(); shopBalance.textContent = coinBalance(); }
-      }
 
       function updateHint() {
         if (!running) { fishHint.classList.add('hidden'); return; }
@@ -474,13 +499,11 @@
         ctx.save();
         ctx.translate(p.x, p.y);
         const s = p.size;
-        // מעטפת עגולה
-        const g = ctx.createLinearGradient(0, -s * 0.8, 0, s * 0.5);
-        g.addColorStop(0, fishColors[0]); g.addColorStop(0.5, fishColors[1]); g.addColorStop(1, fishColors[2]);
-        ctx.fillStyle = g;
+        // מעטפת אדומה (התמנון תמיד אדום)
+        ctx.fillStyle = '#dc2626';
         ctx.beginPath(); ctx.ellipse(0, -s * 0.1, s * 0.85, s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
         // 8 מחושים
-        ctx.strokeStyle = fishColors[1]; ctx.lineWidth = s * 0.16; ctx.lineCap = 'round';
+        ctx.strokeStyle = '#991b1b'; ctx.lineWidth = s * 0.16; ctx.lineCap = 'round';
         for (let i = 0; i < 8; i++) {
           const a = Math.PI * 0.1 + i * (Math.PI * 0.8 / 7);
           ctx.beginPath();
@@ -615,8 +638,12 @@
 
       shopBtn.addEventListener('click', () => { shopEl.classList.contains('hidden') ? openShop() : closeShop(); });
       closeShopBtn.addEventListener('click', closeShop);
-      buyColorBtn.addEventListener('click', buyColorItem);
-      buyOctopusBtn.addEventListener('click', buyOctopusItem);
+      colorPalette.addEventListener('click', e => { const sw = e.target.closest('.swatch'); if (sw) handleSwatch(+sw.dataset.i); });
+      octopusAction.addEventListener('click', () => {
+        if (!octopusOwned) { if (window.NoamCoins && window.NoamCoins.spend(1000)) { octopusOwned = true; skin = 'octopus'; } }
+        else { skin = (skin === 'octopus') ? 'fish' : 'octopus'; } // מעבר חופשי אחרי רכישה
+        renderOctopusRow(); updateAbilityUI(); shopBalance.textContent = coinBalance();
+      });
       // יכולת תמנון: קליק ימני - מושך את כל האוכל לשחקן מיד, קואורדאון 60s
       canvas.addEventListener('contextmenu', e => {
         e.preventDefault();

@@ -535,3 +535,19 @@ footer {
 }
 .shop-item span { text-align: right; flex: 1; }
 .shop-item b { color: #fbbf24; white-space: nowrap; }
+
+/* פלטת צבעים בחנות */
+.shop-card { max-height: 90vh; overflow-y: auto; }
+.shop-card h3 { font-size: 1rem; margin: 0.75rem 0 0.4rem; color: #e8e8e8; }
+.palette { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+.swatch {
+  height: 52px; border: 2px solid transparent; border-radius: 10px; cursor: pointer;
+  font-size: 0.8rem; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1.1;
+}
+.swatch.locked { color: #fbbf24; }
+.swatch:hover { transform: scale(1.04); }
+.swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px #4ade80; }
+
+/* קואורדאון יכולת */
+.stat.cd { color: #fbbf24; font-weight: 700; }
