@@ -15,7 +15,7 @@
         <span class="stat hidden" id="abilityStat"></span>
       </div>
 
-      <div class="canvas-wrap">
+      <div class="canvas-wrap" id="aqWrap">
         <canvas id="aquarium"></canvas>
         <div class="fish-hint hidden" id="fishHint">לחץ על הדג כדי להפוך לדג 🐟</div>
         <div class="game-overlay" id="overlay">
@@ -30,6 +30,7 @@
       <div class="game-controls">
         <button class="btn" id="restart" type="button">התחל מחדש</button>
         <button class="btn btn-secondary" id="shopBtn" type="button">חנות 🛒</button>
+        <button class="btn btn-secondary" id="fsBtn" type="button">מסך מלא 🖥️</button>
         <a href="index.html" class="btn btn-secondary">חזרה לדף הבית</a>
       </div>
 
@@ -39,12 +40,8 @@
           <p class="shop-balance">יתרה: <b id="shopBalance">0</b> 🪙</p>
           <h3>צבע דג (100 🪙 צבע חדש · מעבר בין צבעים שברשותך בחינם)</h3>
           <div class="palette" id="colorPalette"></div>
-          <h3>דמות</h3>
-          <div class="shop-item">
-            <span>תמנון אדום — יכולת מיוחדת</span>
-            <b id="octopusPrice">1000 🪙</b>
-            <button class="btn" id="octopusAction" type="button">קנה</button>
-          </div>
+          <h3>דמות (רכישה חד-פעמית · מעבר חופשי אחרי רכישה)</h3>
+          <div class="char-list" id="charList"></div>
           <button class="btn btn-secondary" id="closeShop" type="button">סגור</button>
         </div>
       </div>
@@ -74,19 +71,20 @@
       const shopBalance = document.getElementById('shopBalance');
       const shopBtn = document.getElementById('shopBtn');
       const colorPalette = document.getElementById('colorPalette');
-      const octopusPrice = document.getElementById('octopusPrice');
-      const octopusAction = document.getElementById('octopusAction');
+      const charList = document.getElementById('charList');
+      const fsBtn = document.getElementById('fsBtn');
+      const wrapEl = document.getElementById('aqWrap');
       const closeShopBtn = document.getElementById('closeShop');
 
       let W = 600, H = 600, DPR = 1;
-      let player, foods, coins, hazards, bubbles, seaweeds, particles, snow, pebbles, grains;
+      let player, foods, coins, hazards, aifish, sharks, bubbles, seaweeds, particles, snow, pebbles, grains;
       let score = 0, running = false, lastTime = 0, t = 0;
-      let foodTimer = 0, coinTimer = 0, hazTimer = 0;
+      let foodTimer = 0, coinTimer = 0;
       let camMode = 'full'; // 'full' או 'fish' (תצפית מעיני הדג)
       let person = '1st'; // בתוך fish POV: '1st' או '3rd' (מקש E)
       const POP_MS = 1800; // אורך פיצוץ בועה (סלואו-מושן)
       const pointer = { x: 300, y: 300 };
-      let skin = 'fish'; // 'fish' או 'octopus'
+      let skin = 'fish'; // 'fish' | 'octopus' | 'jellyfish' | 'shark'
       let colorPresets = [
         { name: 'כתום', colors: ['#ff8c1a', '#ffb02e', '#ffd54a'], owned: true },
         { name: 'אדום', colors: ['#ef4444', '#f87171', '#fca5a5'], owned: false },
@@ -98,9 +96,16 @@
         { name: 'זהב', colors: ['#eab308', '#facc15', '#fde047'], owned: false }
       ];
       let fishColors = colorPresets[0].colors;
-      let octopusOwned = false;
+      let octopusOwned = false, jellyfishOwned = false, sharkOwned = false;
       let abilityCD = 0; // קואורדאון יכולת התמנון (ms)
       let shopOpen = false;
+      const SAVE_KEY = 'noam_aquarium';
+      const CHARS = [
+        { id: 'fish', name: 'דג', price: 0 },
+        { id: 'octopus', name: 'תמנון (אדום)', price: 1000 },
+        { id: 'jellyfish', name: 'מדוזה', price: 1500 },
+        { id: 'shark', name: 'כריש', price: 2000 }
+      ];
 
       function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
       function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
@@ -109,14 +114,14 @@
         DPR = Math.min(window.devicePixelRatio || 1, 2);
         const rect = canvas.getBoundingClientRect();
         W = rect.width || 600;
-        H = rect.height || 450;
+        H = rect.height || 600;
         canvas.width = Math.round(W * DPR);
         canvas.height = Math.round(H * DPR);
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       }
 
       function makeBubble() {
-        const minR = 10, maxR = 19; // רדיוס 0.5cm~1cm
+        const minR = 10, maxR = 19;
         let x, y, r, ok = false, tries = 0;
         do {
           r = minR + Math.random() * (maxR - minR);
@@ -128,28 +133,34 @@
         return { x, y, r, state: 'rise', vy: 0.35 + Math.random() * 0.45, wob: Math.random() * 6.28, pop: 0 };
       }
 
+      // קנה מידה ריאליסטי: מסך גדול יותר → יותר גרגירי חול ועד 8 אצות
+      function regenDecor() {
+        const swCount = clamp(Math.round(W / 110), 4, 8);
+        seaweeds = [];
+        for (let i = 0; i < swCount; i++) seaweeds.push({ x: (i + 0.5) / swCount * W + (Math.random() - 0.5) * 30, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
+        const grCount = clamp(Math.round(W * H / 2200), 80, 500);
+        grains = [];
+        for (let i = 0; i < grCount; i++) grains.push({ x: Math.random() * W, y: H - 21 + Math.random() * 19, r: 0.5 + Math.random() * 0.9, c: Math.random() < 0.5 ? '#e8c878' : '#9c7a35' });
+      }
+
       function setup() {
         resize();
         player = { x: W / 2, y: H / 2, size: 36, dir: 1, vx: 0, vy: 0, heading: 0 };
-        foods = []; coins = []; hazards = []; particles = [];
+        foods = []; coins = []; hazards = []; aifish = []; sharks = []; particles = [];
         bubbles = [];
-        for (let i = 0; i < 3; i++) bubbles.push(makeBubble()); // בדיוק 3 בועות צפות
-        seaweeds = [];
-        for (let i = 0; i < 8; i++) seaweeds.push({ x: (i + 0.5) / 8 * W + (Math.random() - 0.5) * 30, h: 50 + Math.random() * 90, phase: Math.random() * Math.PI * 2 });
+        for (let i = 0; i < 3; i++) bubbles.push(makeBubble());
+        regenDecor();
         snow = [];
         for (let i = 0; i < 26; i++) snow.push({ x: Math.random() * W, y: Math.random() * H, r: 0.6 + Math.random() * 1.4, vx: -0.15 + Math.random() * 0.06, vy: 0.08 + Math.random() * 0.22 });
         pebbles = [];
         for (let i = 0; i < 46; i++) pebbles.push({ x: Math.random() * W, y: H - 20 + Math.random() * 18, r: 1 + Math.random() * 2.2, c: Math.random() < 0.5 ? '#a9823f' : '#c9a063' });
-        grains = [];
-        for (let i = 0; i < 140; i++) grains.push({ x: Math.random() * W, y: H - 21 + Math.random() * 19, r: 0.5 + Math.random() * 0.9, c: Math.random() < 0.5 ? '#e8c878' : '#9c7a35' });
         score = 0; updateScoreUI();
         camMode = 'full'; person = '1st';
-        foodTimer = 500; coinTimer = 5000; hazTimer = 4000;
+        foodTimer = 500; coinTimer = 5000;
         pointer.x = W / 2; pointer.y = H / 2;
       }
 
       function updateScoreUI() { scoreEl.textContent = score; }
-
       function coinBalance() { return window.NoamCoins ? window.NoamCoins.get() : 0; }
 
       function updateAbilityUI() {
@@ -157,6 +168,28 @@
         abilityStat.classList.remove('hidden');
         if (abilityCD > 0) { abilityStat.textContent = 'היכולת תהיה מוכנה בעוד: ' + Math.ceil(abilityCD / 1000) + 's'; abilityStat.classList.add('cd'); }
         else { abilityStat.textContent = 'יכולת מוכנה ✓'; abilityStat.classList.remove('cd'); }
+      }
+
+      /* ===== מלאי / חנות ===== */
+      function isOwned(id) { return id === 'fish' || (id === 'octopus' && octopusOwned) || (id === 'jellyfish' && jellyfishOwned) || (id === 'shark' && sharkOwned); }
+      function setOwned(id, v) { if (id === 'octopus') octopusOwned = v; else if (id === 'jellyfish') jellyfishOwned = v; else if (id === 'shark') sharkOwned = v; }
+
+      function saveInv() {
+        try {
+          const ownedColors = []; colorPresets.forEach((p, i) => { if (p.owned) ownedColors.push(i); });
+          localStorage.setItem(SAVE_KEY, JSON.stringify({ ownedColors, octopusOwned, jellyfishOwned, sharkOwned, skin, colorIndex: colorPresets.findIndex(p => p.colors === fishColors) }));
+        } catch (e) { /* התעלם */ }
+      }
+      function loadInv() {
+        try {
+          const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+          if (Array.isArray(s.ownedColors)) s.ownedColors.forEach(i => { if (colorPresets[i]) colorPresets[i].owned = true; });
+          if (s.octopusOwned) octopusOwned = true;
+          if (s.jellyfishOwned) jellyfishOwned = true;
+          if (s.sharkOwned) sharkOwned = true;
+          if (['fish', 'octopus', 'jellyfish', 'shark'].includes(s.skin)) skin = s.skin;
+          if (typeof s.colorIndex === 'number' && colorPresets[s.colorIndex]) fishColors = colorPresets[s.colorIndex].colors;
+        } catch (e) { /* התעלם */ }
       }
 
       function renderPalette() {
@@ -174,14 +207,33 @@
       }
       function handleSwatch(i) {
         const p = colorPresets[i];
-        if (p.owned) { fishColors = p.colors; renderPalette(); }
-        else if (window.NoamCoins && window.NoamCoins.spend(100)) { p.owned = true; fishColors = p.colors; renderPalette(); shopBalance.textContent = coinBalance(); }
+        if (p.owned) { fishColors = p.colors; renderPalette(); saveInv(); }
+        else if (window.NoamCoins && window.NoamCoins.spend(100)) { p.owned = true; fishColors = p.colors; renderPalette(); shopBalance.textContent = coinBalance(); saveInv(); }
       }
-      function renderOctopusRow() {
-        if (octopusOwned) { octopusPrice.textContent = 'בבעלותך'; octopusAction.textContent = (skin === 'octopus') ? 'חזור לדג' : 'הפוך לתמנון'; }
-        else { octopusPrice.textContent = '1000 🪙'; octopusAction.textContent = 'קנה'; }
+
+      function renderCharList() {
+        charList.innerHTML = '';
+        CHARS.forEach(c => {
+          const owned = isOwned(c.id), sel = (skin === c.id);
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'char-btn' + (owned ? '' : ' locked') + (sel ? ' selected' : '');
+          b.dataset.id = c.id;
+          const label = owned ? (sel ? '✓ נבחר' : 'בחר') : (c.price + ' 🪙');
+          b.innerHTML = '<span>' + c.name + '</span><b>' + label + '</b>';
+          charList.appendChild(b);
+        });
       }
-      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coinBalance(); renderPalette(); renderOctopusRow(); }
+      function handleChar(id) {
+        if (isOwned(id)) { skin = id; }
+        else {
+          const c = CHARS.find(x => x.id === id);
+          if (window.NoamCoins && window.NoamCoins.spend(c.price)) { setOwned(id, true); skin = id; }
+        }
+        renderCharList(); updateAbilityUI(); shopBalance.textContent = coinBalance(); saveInv();
+      }
+
+      function openShop() { shopOpen = true; shopEl.classList.remove('hidden'); shopBalance.textContent = coinBalance(); renderPalette(); renderCharList(); }
       function closeShop() { shopOpen = false; shopEl.classList.add('hidden'); }
 
       function updateHint() {
@@ -207,10 +259,17 @@
       /* יצירת אובייקטים */
       function spawnFood() { foods.push({ x: 20 + Math.random() * (W - 40), y: -10, vy: 0.4 + Math.random() * 0.5, r: 6 }); }
       function spawnCoin() { coins.push({ x: 30 + Math.random() * (W - 60), y: 30 + Math.random() * (H - 60), bob: Math.random() * Math.PI * 2, life: 8000, collected: false }); }
-      function spawnHazard() {
-        const fromLeft = Math.random() < 0.5;
-        const r = 30; // ~3x3 ס"מ
-        hazards.push({ x: fromLeft ? -r : W + r, y: 50 + Math.random() * (H - 160), vx: (fromLeft ? 1 : -1) * (0.5 + Math.random() * 0.5), vy: (Math.random() - 0.5) * 0.3, r: r, phase: Math.random() * Math.PI * 2 });
+      function spawnHazard() { // מדוזת NPC - מזון לכריש
+        const fromLeft = Math.random() < 0.5, r = 26;
+        hazards.push({ x: fromLeft ? -r : W + r, y: 50 + Math.random() * (H - 160), vx: (fromLeft ? 1 : -1) * (0.5 + Math.random() * 0.5), vy: (Math.random() - 0.5) * 0.3, r: r, phase: Math.random() * Math.PI * 2, eaten: false });
+      }
+      function spawnAIFish() { // דג AI - מזון למדוזה
+        const fromLeft = Math.random() < 0.5, r = 10;
+        aifish.push({ x: fromLeft ? -r : W + r, y: 40 + Math.random() * (H - 100), vx: (fromLeft ? 1 : -1) * (0.6 + Math.random() * 0.5), vy: (Math.random() - 0.5) * 0.3, r: r, dir: fromLeft ? 1 : -1, eaten: false });
+      }
+      function spawnShark() { // כריש NPC - טורף שאוכל מדוזות-שחקן
+        const fromLeft = Math.random() < 0.5, r = 34;
+        sharks.push({ x: fromLeft ? -r : W + r, y: 60 + Math.random() * (H - 160), vx: (fromLeft ? 1 : -1) * (0.4 + Math.random() * 0.4), vy: (Math.random() - 0.5) * 0.2, r: r, dir: fromLeft ? 1 : -1 });
       }
 
       function addBurst(x, y, color) {
@@ -220,7 +279,6 @@
         }
       }
 
-      // ערפל צלילות - ראות מוגבלת מתחת למים
       function fogOf(x, y) {
         if (camMode !== 'fish') return 1;
         const d = Math.hypot(x - player.x, y - player.y);
@@ -236,92 +294,114 @@
       }
 
       function update(dt) {
-        if (shopOpen) return; // מושהה בזמן חנות
+        if (shopOpen) return;
         if (abilityCD > 0) { abilityCD = Math.max(0, abilityCD - dt); updateAbilityUI(); }
-        // יעד תנועה לפי מצב מצלמה
+        // יעד תנועה
         let tx, ty;
         if (camMode === 'fish') {
           let sx = pointer.x - W / 2, sy = pointer.y - H / 2;
           const mag = Math.hypot(sx, sy), max = 80;
           if (mag > max) { sx = sx / mag * max; sy = sy / mag * max; }
           tx = player.x + sx; ty = player.y + sy;
-        } else {
-          tx = pointer.x; ty = pointer.y;
-        }
+        } else { tx = pointer.x; ty = pointer.y; }
         const dx = tx - player.x, dy = ty - player.y;
         const k = 0.14;
-        player.x += dx * k * (dt / 16);
-        player.y += dy * k * (dt / 16);
+        player.x += dx * k * (dt / 16); player.y += dy * k * (dt / 16);
         if (Math.abs(dx) > 2) player.dir = dx > 0 ? 1 : -1;
-        // כיוון מבט חלק (לסיבוב התצפית)
         if (Math.hypot(dx, dy) > 3) player.heading = lerpAngle(player.heading, Math.atan2(dy, dx), 0.18);
         player.x = clamp(player.x, player.size, W - player.size);
         player.y = clamp(player.y, player.size, H - player.size);
 
         // טיימרים
-        foodTimer -= dt;
-        if (foodTimer <= 0) { spawnFood(); foodTimer = 650 + Math.random() * 900; }
-        coinTimer -= dt;
-        if (coinTimer <= 0) { spawnCoin(); coinTimer = 6000 + Math.random() * 5000; }
-        if (hazards.length < 1) spawnHazard(); // בדיוק מדוזה אחת
+        foodTimer -= dt; if (foodTimer <= 0) { spawnFood(); foodTimer = 650 + Math.random() * 900; }
+        coinTimer -= dt; if (coinTimer <= 0) { spawnCoin(); coinTimer = 6000 + Math.random() * 5000; }
 
         for (const f of foods) f.y += f.vy * (dt / 16);
         foods = foods.filter(f => f.y < H + 20 && !f.eaten);
-
         for (const c of coins) { c.bob += 0.06; c.life -= dt; }
         coins = coins.filter(c => c.life > 0 && !c.collected);
 
-        for (const h of hazards) { h.x += h.vx * (dt / 16); h.y += h.vy * (dt / 16); h.phase += 0.03; }
-        hazards = hazards.filter(h => h.x > -60 && h.x < W + 60 && h.y > -60 && h.y < H + 60);
+        // דגי AI (קופצים בתוך המכל)
+        for (const f of aifish) {
+          f.x += f.vx * (dt / 16); f.y += f.vy * (dt / 16);
+          if (f.y < 20) { f.y = 20; f.vy = Math.abs(f.vy); } if (f.y > H - 20) { f.y = H - 20; f.vy = -Math.abs(f.vy); }
+          if (f.x < f.r) { f.x = f.r; f.vx = Math.abs(f.vx); } if (f.x > W - f.r) { f.x = W - f.r; f.vx = -Math.abs(f.vx); }
+          f.dir = f.vx > 0 ? 1 : -1;
+        }
+        aifish = aifish.filter(f => !f.eaten);
+        while (aifish.length < 4) spawnAIFish();
 
-        // אכילה
+        // מדוזות NPC נעות
+        for (const h of hazards) { h.x += h.vx * (dt / 16); h.y += h.vy * (dt / 16); h.phase += 0.03; }
+        hazards = hazards.filter(h => !h.eaten && h.x > -60 && h.x < W + 60 && h.y > -60 && h.y < H + 60);
+        while (hazards.length < 2) spawnHazard();
+
+        // כריש NPC - רק כשהשחקן אינו כריש
+        if (skin !== 'shark') {
+          for (const s of sharks) s.x += s.vx * (dt / 16);
+          sharks = sharks.filter(s => s.x > -80 && s.x < W + 80);
+          while (sharks.length < 1) spawnShark();
+        } else { sharks = []; }
+
+        // אכילת אוכל (כל דמות)
         for (const f of foods) {
           if (!f.eaten && Math.hypot(f.x - player.x, f.y - player.y) < player.size + f.r) {
-            f.eaten = true; score++; player.size = Math.min(48, player.size + 0.35);
-            addBurst(f.x, f.y, '#ffcc66'); updateScoreUI();
+            f.eaten = true; score++; player.size = Math.min(48, player.size + 0.35); addBurst(f.x, f.y, '#ffcc66'); updateScoreUI();
           }
         }
-        // מטבעות
+        // איסוף מטבעות (כל דמות)
         for (const c of coins) {
           if (!c.collected && Math.hypot(c.x - player.x, c.y - player.y) < player.size + 10) {
-            c.collected = true;
-            if (window.NoamCoins) window.NoamCoins.add(1);
-            addBurst(c.x, c.y, '#fbbf24');
+            c.collected = true; if (window.NoamCoins) window.NoamCoins.add(1); addBurst(c.x, c.y, '#fbbf24');
           }
         }
-        // מדוזות - בתצפית מעיני הדג הדג בלתי-פגיע
-        for (const h of hazards) {
-          if (camMode !== 'fish' && Math.hypot(h.x - player.x, h.y - player.y) < player.size + h.r * 0.6) {
-            endGame(); break;
+        // משחק מדוזה: אוכלת דגי AI (+1 נקודה, +5 מטבעות); נאכלת על ידי כריש NPC
+        if (skin === 'jellyfish') {
+          for (const f of aifish) {
+            if (!f.eaten && Math.hypot(f.x - player.x, f.y - player.y) < player.size + f.r) {
+              f.eaten = true; score++; if (window.NoamCoins) window.NoamCoins.add(5); addBurst(f.x, f.y, '#a78bfa'); updateScoreUI();
+            }
+          }
+          for (const s of sharks) {
+            if (Math.hypot(s.x - player.x, s.y - player.y) < player.size + s.r * 0.6) { endGame(); break; }
           }
         }
+        // משחק כריש: אוכל מדוזות NPC; נפסל אם נוגע באצות
+        if (skin === 'shark') {
+          for (const h of hazards) {
+            if (!h.eaten && Math.hypot(h.x - player.x, h.y - player.y) < player.size + h.r * 0.6) {
+              h.eaten = true; score++; addBurst(h.x, h.y, '#c084fc'); updateScoreUI();
+            }
+          }
+          for (const sw of seaweeds) {
+            if (Math.abs(player.x - sw.x) < player.size + 6 && player.y > (H - 14) - sw.h) { endGame(); break; }
+          }
+        }
+        // דג/תמנון: אין מוות (הדג בלתי-פגיע ב-POV)
 
-        // בועות - 3 צפות, פיצוץ איטי בהתנגשות בגבול/אובייקט
+        // בועות - 3 צפות, פיצוץ איטי
         for (const b of bubbles) {
           if (b.state === 'rise') {
             b.y -= b.vy * (dt / 16); b.wob += 0.03; b.x += Math.sin(b.wob) * 0.3;
             let pop = b.y <= b.r;
             if (!pop && Math.hypot(b.x - player.x, b.y - player.y) < player.size + b.r) pop = true;
-            if (!pop) for (const h of hazards) { if (Math.hypot(b.x - h.x, b.y - h.y) < h.r + b.r) { pop = true; break; } }
+            if (!pop) for (const h of hazards) { if (!h.eaten && Math.hypot(b.x - h.x, b.y - h.y) < h.r + b.r) { pop = true; break; } }
             if (pop) { b.state = 'pop'; b.pop = 0; }
           } else { b.pop += dt / POP_MS; }
         }
         bubbles = bubbles.filter(b => b.state !== 'pop' || b.pop < 1);
         while (bubbles.filter(b => b.state === 'rise').length < 3) bubbles.push(makeBubble());
 
-        // חלקיקים
         for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= dt; }
         particles = particles.filter(p => p.life > 0);
-
         updateSnow(dt);
       }
 
-      /* ===== ציור רקע ריאליסטי ===== */
+      /* ===== ציור ===== */
       function drawWater() {
         const g = ctx.createLinearGradient(0, 0, 0, H);
         g.addColorStop(0, '#0e4a72'); g.addColorStop(0.5, '#0a3a5e'); g.addColorStop(1, '#063048');
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-        // ברק פני שטח
         ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 2;
         for (let i = 0; i < 3; i++) {
           const y = 8 + i * 6;
@@ -330,7 +410,6 @@
           ctx.stroke();
         }
         ctx.restore();
-        // קרני אור
         ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = '#aee0ff';
         for (let i = 0; i < 3; i++) {
           const x = (i + 0.5) / 3 * W + Math.sin(t * 0.0005 + i) * 20;
@@ -349,7 +428,6 @@
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
       }
 
-      // קרקעית תלת-מימדית: חול צהבהב + דיונות + גרגירים + דעיכה למים
       function drawSand() {
         const top = H - 22;
         ctx.beginPath();
@@ -393,16 +471,12 @@
 
       function drawBubble(b) {
         if (b.state === 'pop') {
-          const pr = b.r * (1 + b.pop * 1.7);
-          const a = 1 - b.pop;
-          ctx.globalAlpha = a * 0.6;
-          ctx.strokeStyle = 'rgba(220,240,255,0.7)'; ctx.lineWidth = 2;
+          const pr = b.r * (1 + b.pop * 1.7), a = 1 - b.pop;
+          ctx.globalAlpha = a * 0.6; ctx.strokeStyle = 'rgba(220,240,255,0.7)'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(b.x, b.y, pr, 0, Math.PI * 2); ctx.stroke();
-          ctx.globalAlpha = a * 0.22;
-          ctx.fillStyle = 'rgba(220,240,255,1)';
+          ctx.globalAlpha = a * 0.22; ctx.fillStyle = 'rgba(220,240,255,1)';
           ctx.beginPath(); ctx.arc(b.x, b.y, pr, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 1;
-          return;
+          ctx.globalAlpha = 1; return;
         }
         const g = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.2, b.x, b.y, b.r);
         g.addColorStop(0, 'rgba(255,255,255,0.05)'); g.addColorStop(0.7, 'rgba(200,230,255,0.08)');
@@ -415,7 +489,6 @@
         ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.2, 0, Math.PI * 2); ctx.fill();
       }
 
-      // אוכל תלת-מימדי
       function drawFood(f) {
         const r = f.r;
         const g = ctx.createRadialGradient(f.x - r * 0.35, f.y - r * 0.35, r * 0.15, f.x, f.y, r);
@@ -426,7 +499,6 @@
         ctx.beginPath(); ctx.arc(f.x - r * 0.3, f.y - r * 0.3, r * 0.22, 0, Math.PI * 2); ctx.fill();
       }
 
-      // מטבע תלת-מימדי
       function drawCoin(c, fog) {
         const yy = c.y + Math.sin(c.bob) * 3;
         const fade = c.life < 1500 ? c.life / 1500 : 1;
@@ -443,80 +515,89 @@
         ctx.globalAlpha = 1;
       }
 
-      function drawHazard(h) {
-        const r = h.r;
-        const g = ctx.createRadialGradient(h.x - r * 0.2, h.y - r * 0.5, r * 0.2, h.x, h.y, r);
+      // מדוזה (גרסה פרמטרית - משותפת ל-NPC ולשחקן)
+      function drawJelly(x, y, r, phase) {
+        const g = ctx.createRadialGradient(x - r * 0.2, y - r * 0.5, r * 0.2, x, y, r);
         g.addColorStop(0, 'rgba(232,190,255,0.9)'); g.addColorStop(0.6, 'rgba(168,85,247,0.85)'); g.addColorStop(1, 'rgba(157,23,77,0.9)');
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(h.x, h.y, r, Math.PI, 0); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); ctx.fill();
         ctx.strokeStyle = 'rgba(245,210,255,0.6)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(h.x, h.y, r, Math.PI, 0); ctx.stroke();
-        // מחושים יורדים מתחתית המדוזה
+        ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); ctx.stroke();
         ctx.strokeStyle = 'rgba(190,24,93,0.8)'; ctx.lineWidth = 2.5;
         for (let i = -2; i <= 2; i++) {
-          const tx = h.x + i * r * 0.32;
-          ctx.beginPath(); ctx.moveTo(tx, h.y);
-          for (let k = 1; k <= 5; k++) {
-            const yy = h.y + k * r * 0.28;
-            const xx = tx + Math.sin(h.phase + i + k) * 4;
-            ctx.lineTo(xx, yy);
-          }
+          const tx = x + i * r * 0.32;
+          ctx.beginPath(); ctx.moveTo(tx, y);
+          for (let k = 1; k <= 5; k++) { const yy2 = y + k * r * 0.28; const xx = tx + Math.sin(phase + i + k) * 4; ctx.lineTo(xx, yy2); }
           ctx.stroke();
         }
         ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(h.x - r * 0.3, h.y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(h.x + r * 0.3, h.y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + r * 0.3, y - r * 0.2, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+      function drawHazard(h) { drawJelly(h.x, h.y, h.r, h.phase); }
+
+      // כריש (גרסה פרמטרית - משותפת ל-NPC ולשחקן)
+      function drawShark(x, y, s, dir) {
+        ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1);
+        const g = ctx.createLinearGradient(0, -s * 0.4, 0, s * 0.4);
+        g.addColorStop(0, '#6b7280'); g.addColorStop(0.6, '#4b5563'); g.addColorStop(1, '#374151');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#d1d5db';
+        ctx.beginPath(); ctx.ellipse(0, s * 0.18, s * 0.8, s * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#4b5563';
+        ctx.beginPath(); ctx.moveTo(-s * 0.8, 0); ctx.lineTo(-s * 1.5, -s * 0.5); ctx.lineTo(-s * 1.3, 0); ctx.lineTo(-s * 1.5, s * 0.5); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-s * 0.1, -s * 0.4); ctx.lineTo(s * 0.2, -s * 0.85); ctx.lineTo(s * 0.3, -s * 0.4); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(s * 0.1, s * 0.3, s * 0.3, s * 0.12, 0.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s * 0.5, -s * 0.1, s * 0.13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(s * 0.54, -s * 0.1, s * 0.06, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#374151'; ctx.lineWidth = 1.5;
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(s * 0.25 - i * s * 0.1, 0, s * 0.12, -1, 1); ctx.stroke(); }
+        ctx.restore();
+      }
+
+      function drawAIFish(f) {
+        ctx.save(); ctx.translate(f.x, f.y); ctx.scale(f.dir, 1);
+        const s = f.r;
+        ctx.fillStyle = '#9ca3af';
+        ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-s * 0.7, 0); ctx.lineTo(-s * 1.4, -s * 0.5); ctx.lineTo(-s * 1.4, s * 0.5); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s * 0.4, -s * 0.15, s * 0.18, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#1f2937'; ctx.beginPath(); ctx.arc(s * 0.45, -s * 0.15, s * 0.08, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       }
 
       function drawFish(p) {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(p.dir, 1);
-        const s = p.size;
-        const wig = Math.sin(t * 0.02) * s * 0.18;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.dir, 1);
+        const s = p.size, wig = Math.sin(t * 0.02) * s * 0.18;
         ctx.fillStyle = fishColors[0];
         ctx.beginPath();
-        ctx.moveTo(-s * 0.8, 0);
-        ctx.lineTo(-s * 1.6, -s * 0.5 + wig);
-        ctx.lineTo(-s * 1.5, 0);
-        ctx.lineTo(-s * 1.6, s * 0.5 + wig);
+        ctx.moveTo(-s * 0.8, 0); ctx.lineTo(-s * 1.6, -s * 0.5 + wig); ctx.lineTo(-s * 1.5, 0); ctx.lineTo(-s * 1.6, s * 0.5 + wig);
         ctx.closePath(); ctx.fill();
-        // גוף - גרדיאנט חלק (ללא פסים)
         const g = ctx.createLinearGradient(0, -s * 0.62, 0, s * 0.62);
         g.addColorStop(0, fishColors[0]); g.addColorStop(0.55, fishColors[1]); g.addColorStop(1, fishColors[2]);
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = fishColors[1];
         ctx.beginPath(); ctx.ellipse(-s * 0.1, -s * 0.45, s * 0.35, s * 0.18, -0.3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(s * 0.5, -s * 0.12, s * 0.2, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#113355';
-        ctx.beginPath(); ctx.arc(s * 0.56, -s * 0.12, s * 0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s * 0.5, -s * 0.12, s * 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#113355'; ctx.beginPath(); ctx.arc(s * 0.56, -s * 0.12, s * 0.1, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
 
       function drawOctopus(p) {
-        ctx.save();
-        ctx.translate(p.x, p.y);
+        ctx.save(); ctx.translate(p.x, p.y);
         const s = p.size;
-        // מעטפת אדומה (התמנון תמיד אדום)
         ctx.fillStyle = '#dc2626';
         ctx.beginPath(); ctx.ellipse(0, -s * 0.1, s * 0.85, s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
-        // 8 מחושים
         ctx.strokeStyle = '#991b1b'; ctx.lineWidth = s * 0.16; ctx.lineCap = 'round';
         for (let i = 0; i < 8; i++) {
           const a = Math.PI * 0.1 + i * (Math.PI * 0.8 / 7);
           ctx.beginPath();
           ctx.moveTo(Math.cos(a) * s * 0.6, Math.sin(a) * s * 0.45 - s * 0.05);
-          for (let k = 1; k <= 5; k++) {
-            const tk = k / 5;
-            const wob = Math.sin(t * 0.006 + i + k) * s * 0.12;
-            const r = s * (0.6 + tk * 0.95);
-            ctx.lineTo(Math.cos(a) * r + wob, Math.sin(a) * r - s * 0.05 + tk * s * 0.1);
-          }
+          for (let k = 1; k <= 5; k++) { const tk = k / 5, wob = Math.sin(t * 0.006 + i + k) * s * 0.12, r = s * (0.6 + tk * 0.95); ctx.lineTo(Math.cos(a) * r + wob, Math.sin(a) * r - s * 0.05 + tk * s * 0.1); }
           ctx.stroke();
         }
-        // עיניים
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(-s * 0.22, -s * 0.25, s * 0.14, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.25, s * 0.14, 0, Math.PI * 2); ctx.fill();
@@ -526,6 +607,13 @@
         ctx.restore();
       }
 
+      function drawPlayer() {
+        if (skin === 'octopus') drawOctopus(player);
+        else if (skin === 'jellyfish') drawJelly(player.x, player.y, player.size, t * 0.01);
+        else if (skin === 'shark') drawShark(player.x, player.y, player.size, player.dir);
+        else drawFish(player);
+      }
+
       function drawParticle(p) {
         ctx.globalAlpha = Math.max(p.life / 400, 0);
         ctx.fillStyle = p.color;
@@ -533,11 +621,7 @@
         ctx.globalAlpha = 1;
       }
 
-      // שכבות אווירה במסך (תצפית מעיני הדג)
-      function drawSnow() {
-        ctx.fillStyle = 'rgba(190,225,235,0.4)';
-        for (const s of snow) { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); }
-      }
+      function drawSnow() { ctx.fillStyle = 'rgba(190,225,235,0.4)'; for (const s of snow) { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); } }
       function drawVignette() {
         const g = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.25, W / 2, H * 0.5, Math.max(W, H) * 0.75);
         g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,18,32,0.6)');
@@ -549,14 +633,12 @@
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       }
 
-      // פרספקטיבה בתצפית מעיני הדג: קרוב = גדול, רחוק = קטן
       function withPersp(x, y, fn) {
         if (camMode !== 'fish') { fn(); return; }
         const d = Math.hypot(x - player.x, y - player.y);
         const sc = clamp(1.2 - d / 500, 0.5, 1.2);
         ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); ctx.translate(-x, -y);
-        fn();
-        ctx.restore();
+        fn(); ctx.restore();
       }
 
       function render() {
@@ -567,17 +649,19 @@
           const phi = -Math.PI / 2 - player.heading;
           ctx.translate(W / 2, H / 2); ctx.rotate(phi); ctx.translate(-player.x, -player.y);
         } else if (pov && person === '3rd') {
-          ctx.translate(W / 2 - player.x, H / 2 - player.y); // מצלמת מרדף (גוף שלישי)
+          ctx.translate(W / 2 - player.x, H / 2 - player.y);
         }
         drawSand();
         for (const p of pebbles) withPersp(p.x, p.y, () => { ctx.globalAlpha = fogOf(p.x, p.y); drawPebble(p); });
         for (const s of seaweeds) withPersp(s.x, H - 14, () => { ctx.globalAlpha = fogOf(s.x, H - 14); drawSeaweed(s); });
         for (const b of bubbles) withPersp(b.x, b.y, () => { ctx.globalAlpha = fogOf(b.x, b.y); drawBubble(b); });
+        for (const f of aifish) withPersp(f.x, f.y, () => { ctx.globalAlpha = fogOf(f.x, f.y); drawAIFish(f); });
         for (const f of foods) withPersp(f.x, f.y, () => { ctx.globalAlpha = fogOf(f.x, f.y); drawFood(f); });
         for (const c of coins) withPersp(c.x, c.y, () => drawCoin(c, fogOf(c.x, c.y)));
         for (const h of hazards) withPersp(h.x, h.y, () => { ctx.globalAlpha = fogOf(h.x, h.y); drawHazard(h); });
+        for (const s of sharks) withPersp(s.x, s.y, () => { ctx.globalAlpha = fogOf(s.x, s.y); drawShark(s.x, s.y, s.r, s.dir); });
         ctx.globalAlpha = 1;
-        if (!pov || person === '3rd') { if (skin === 'octopus') drawOctopus(player); else drawFish(player); } // בגוף ראשון השחקן עצמו נעלם
+        if (!pov || person === '3rd') drawPlayer();
         for (const p of particles) drawParticle(p);
         ctx.restore();
         if (pov) { drawSnow(); drawVignette(); if (person === '1st') drawSnout(); }
@@ -586,15 +670,14 @@
       function loop(now) {
         if (!running) return;
         const dt = Math.min(now - lastTime, 50); lastTime = now; t += dt;
-        update(dt);
-        render();
+        update(dt); render();
         requestAnimationFrame(loop);
       }
 
       function endGame() {
         running = false;
         overlayTitle.textContent = 'סוף המשחק! 🐟';
-        overlayMsg.innerHTML = 'הניקוד שלך: <b>' + score + '</b> אוכלים 🍤<br>נסה שוב לשבור את השיא!';
+        overlayMsg.innerHTML = 'הניקוד שלך: <b>' + score + '</b> 🍤<br>נסה שוב לשבור את השיא!';
         startBtn.textContent = 'שחק שוב';
         overlay.classList.remove('hidden');
         updateHint();
@@ -611,15 +694,14 @@
       /* קלט */
       function setPointer(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
-        pointer.x = clientX - rect.left;
-        pointer.y = clientY - rect.top;
+        pointer.x = clientX - rect.left; pointer.y = clientY - rect.top;
       }
       function onPress(clientX, clientY) {
         if (!running) return;
-        if (camMode === 'full') { toggleCam(); return; } // כל לחיצה הופכת לדג
+        if (camMode === 'full') { toggleCam(); return; }
         const rect = canvas.getBoundingClientRect();
         const sx = clientX - rect.left, sy = clientY - rect.top;
-        if (Math.hypot(sx - W / 2, sy - H / 2) < 52) { toggleCam(); return; } // לחיצה במרכז = יציאה
+        if (Math.hypot(sx - W / 2, sy - H / 2) < 52) { toggleCam(); return; }
         setPointer(clientX, clientY);
       }
 
@@ -634,16 +716,19 @@
         if (!running || camMode !== 'fish') return;
         if (e.key === 'e' || e.key === 'E') { person = (person === '1st') ? '3rd' : '1st'; updateHint(); }
       });
-      window.addEventListener('resize', () => { if (running) resize(); });
+      window.addEventListener('resize', () => { resize(); regenDecor(); });
 
       shopBtn.addEventListener('click', () => { shopEl.classList.contains('hidden') ? openShop() : closeShop(); });
       closeShopBtn.addEventListener('click', closeShop);
       colorPalette.addEventListener('click', e => { const sw = e.target.closest('.swatch'); if (sw) handleSwatch(+sw.dataset.i); });
-      octopusAction.addEventListener('click', () => {
-        if (!octopusOwned) { if (window.NoamCoins && window.NoamCoins.spend(1000)) { octopusOwned = true; skin = 'octopus'; } }
-        else { skin = (skin === 'octopus') ? 'fish' : 'octopus'; } // מעבר חופשי אחרי רכישה
-        renderOctopusRow(); updateAbilityUI(); shopBalance.textContent = coinBalance();
+      charList.addEventListener('click', e => { const c = e.target.closest('.char-btn'); if (c) handleChar(c.dataset.id); });
+
+      fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) { const f = wrapEl.requestFullscreen || wrapEl.webkitRequestFullscreen; if (f) f.call(wrapEl); }
+        else { const f = document.exitFullscreen || document.webkitExitFullscreen; if (f) f.call(document); }
       });
+      document.addEventListener('fullscreenchange', () => { resize(); regenDecor(); });
+
       // יכולת תמנון: קליק ימני - מושך את כל האוכל לשחקן מיד, קואורדאון 60s
       canvas.addEventListener('contextmenu', e => {
         e.preventDefault();
@@ -655,6 +740,7 @@
       });
 
       /* אתחול */
+      loadInv();
       setup();
       render();
     })();
