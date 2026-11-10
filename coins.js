@@ -9,7 +9,11 @@
     try { localStorage.setItem(KEY, String(v)); } catch (e) { /* התעלם */ }
   }
 
-  let coins = loadCoins();
+  let coins;
+  try {
+    if (localStorage.getItem(KEY) === null) { coins = 5000; localStorage.setItem(KEY, '5000'); } // בונוס התחברות ראשונה
+    else { coins = parseInt(localStorage.getItem(KEY), 10) || 0; }
+  } catch (e) { coins = 0; }
 
   /* יצירת התג */
   const badge = document.createElement('div');
